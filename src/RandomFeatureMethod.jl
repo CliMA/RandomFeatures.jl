@@ -1,0 +1,4 @@
+module RandomFeatureMethod
+
+
+end # module
