@@ -20,3 +20,6 @@ deps/deps.jl
 Manifest.toml
 *.vscode*
 examples/Lorenz/output
+# ignore these emacs backups
+*~
+*#
