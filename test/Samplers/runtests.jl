@@ -49,28 +49,67 @@ seed = 2022
     @test get_optimizable_parameters(sampler2) == oh
 
     # test method: sample
+    function sample_to_Sample(pd::ParameterDistribution, samp::AbstractMatrix)
+        #now create a Samples-type distribution from the samples
+        s_names = get_name(pd)
+        s_slices = batch(pd) # e.g., [1, 2:3, 4:9]
+        s_constraints = get_all_constraints(pd)
+        s_samples = [Samples(samp[slice,:]) for slice in s_slices]
+        
+        return combine_distributions([
+            ParameterDistribution(ss, sc, sn) for (ss, sc, sn) in zip(s_samples, s_constraints, s_names)
+        ])
+    end
+
     # first with global rng
     Random.seed!(seed)
-    sample1 = sample(sampler)
+    sample1 = sample(sampler) # produces a Samples ParameterDistribution
     Random.seed!(seed)
-    @test sample1 == sample(full_pd)
+    test1 = sample_to_Sample(full_pd, sample(full_pd)) 
+    @test get_distribution(sample1) == get_distribution(test1)
+    @test get_all_constraints(sample1) == get_all_constraints(test1)
+    @test get_name(sample1) == get_name(test1)
 
     n_samples = 40
     Random.seed!(seed)
     sample2 = sample(sampler, n_samples)
     Random.seed!(seed)
-    @test sample2 == sample(full_pd, n_samples)
-
+    test2 = sample_to_Sample(full_pd, sample(full_pd, n_samples))
+    @test get_distribution(sample2) == get_distribution(test2)
+    @test get_all_constraints(sample2) == get_all_constraints(test2)
+    @test get_name(sample2) == get_name(test2)
 
     # now with two explicit rng's
     rng1 = Random.MersenneTwister(seed)
-   
-    @test sample(copy(rng1),sampler) == sample(copy(rng1),full_pd,1)
-    @test sample(copy(rng1),sampler,n_samples) == sample(copy(rng1),full_pd,n_samples)
+    sampler_rng1 = Sampler(pd, rng=copy(rng1))
+    sample3 = sample(sampler_rng1)
+    test3 = sample_to_Sample(full_pd, sample(copy(rng1), full_pd, 1))
+    @test get_distribution(sample3) == get_distribution(test3)
+    @test get_all_constraints(sample3) == get_all_constraints(test3)
+    @test get_name(sample3) == get_name(test3)
 
+    
+    sampler_rng1 = Sampler(pd, rng=copy(rng1))
+    sample4 = sample(sampler_rng1, n_samples)
+    test4 = sample_to_Sample(full_pd, sample(copy(rng1), full_pd, n_samples))
+    @test get_distribution(sample4) == get_distribution(test4)
+    @test get_all_constraints(sample4) == get_all_constraints(test4)
+    @test get_name(sample4) == get_name(test4)                             
+
+    #this time override use rng2 to override the default Random.GLOBAL_RNG at the point of sampling
     rng2 = StableRNG(seed)
-    @test sample(copy(rng2),sampler) == sample(copy(rng2),full_pd,1)
-    @test sample(copy(rng2),sampler,n_samples) == sample(copy(rng2),full_pd,n_samples)
+    sample5 = sample(copy(rng2), sampler)
+    test5 = sample_to_Sample(full_pd, sample(copy(rng2), full_pd, 1))
+    @test get_distribution(sample5) == get_distribution(test5)
+    @test get_all_constraints(sample5) == get_all_constraints(test5)
+    @test get_name(sample5) == get_name(test5)
+
+    
+    sample6 = sample(copy(rng2), sampler, n_samples)
+    test6 = sample_to_Sample(full_pd, sample(copy(rng2), full_pd, n_samples))
+    @test get_distribution(sample6) == get_distribution(test6)
+    @test get_all_constraints(sample6) == get_all_constraints(test6)
+    @test get_name(sample6) == get_name(test6)                             
     
     
 end
