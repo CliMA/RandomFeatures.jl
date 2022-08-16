@@ -1,3 +1,5 @@
+using Test
+
 function include_test(_module)
     println("Starting tests for $_module")
     t = @elapsed include(joinpath(_module, "runtests.jl"))
