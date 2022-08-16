@@ -16,9 +16,12 @@ seed = 2022
     # create a Gaussian(0,4) distribution with EKP's ParameterDistribution constructors
     μ_c = 0.0
     σ_c = 4.0
-    pd = constrained_gaussian("test", μ_c, σ_c, -Inf, Inf)
+    pd_err = constrained_gaussian("test", μ_c, σ_c, -Inf, Inf)
 
     # test internals
+    @test_throws ArgumentError Sampler(pd_err)
+
+    pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
     sampler = Sampler(pd)
     @test get_optimizable_parameters(sampler) == nothing
     @test get_uniform_shift_bounds(sampler) == [0,2*pi] 

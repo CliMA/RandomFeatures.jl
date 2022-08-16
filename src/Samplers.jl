@@ -28,6 +28,15 @@ function Sampler(
     uniform_shift_bounds::Union{AbstractVector,Nothing}=[0,2*pi],
     rng::AbstractRNG = Random.GLOBAL_RNG,
 )
+    if "xi" ∉ get_name(parameter_distribution)
+        throw(
+            ArgumentError(
+                " named parameter \"xi\" not found in names of parameter_distribution. "*
+                " \n Please name the distribution to sample the features \"xi\""
+            )
+        )
+    end
+    
     # adds a uniform distribution to the parameter distribution
     if isa(uniform_shift_bounds,AbstractVector)
         if length(uniform_shift_bounds) == 2
@@ -49,7 +58,8 @@ function Sampler(
         pd,
         optimizable_parameters,
         uniform_shift_bounds,
-        rng)
+        rng,
+    )
     
 end
 
