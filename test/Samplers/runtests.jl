@@ -16,10 +16,6 @@ seed = 2022
     # create a Gaussian(0,4) distribution with EKP's ParameterDistribution constructors
     μ_c = 0.0
     σ_c = 4.0
-    pd_err = constrained_gaussian("test", μ_c, σ_c, -Inf, Inf)
-
-    # test internals
-    @test_throws ArgumentError Sampler(pd_err)
 
     pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
     sampler = Sampler(pd)
@@ -85,12 +81,14 @@ seed = 2022
     # now with two explicit rng's
     rng1 = Random.MersenneTwister(seed)
     sampler_rng1 = Sampler(pd, rng=copy(rng1))
+    @test get_rng(sampler_rng1) == copy(rng1)
     sample3 = sample(sampler_rng1)
+    @test !(get_rng(sampler_rng1) == copy(rng1))
     test3 = sample_to_Sample(full_pd, sample(copy(rng1), full_pd, 1))
     @test get_distribution(sample3) == get_distribution(test3)
     @test get_all_constraints(sample3) == get_all_constraints(test3)
     @test get_name(sample3) == get_name(test3)
-
+   
     
     sampler_rng1 = Sampler(pd, rng=copy(rng1))
     sample4 = sample(sampler_rng1, n_samples)
