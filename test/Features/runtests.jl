@@ -3,6 +3,7 @@ using StableRNGs
 using StatsBase
 using LinearAlgebra
 using Random
+using EnsembleKalmanProcesses.ParameterDistributions
 
 using RandomFeatures.Samplers
 using RandomFeatures.Features
@@ -143,11 +144,47 @@ seed = 2202
         @test get_uniform_shift_bounds(sf_test_sampler) == [0,2*pi]
         @test get_optimizable_parameters(sf_test_sampler) == nothing
         
-        
+        sff_test = ScalarFourierFeature(
+            n_features,
+            feature_sampler,
+            hyper_sampler = sigma_sampler,
+        )
+       
+        snf_test = ScalarNeuronFeature(
+            n_features,
+            feature_sampler,
+            hyper_sampler = sigma_sampler,
+        )
 
+        @test isa(get_scalar_function(sff_test), Features.Cosine)
+        @test isa(get_scalar_function(snf_test), Relu)
+        
     end
 
+    @testset "build features" begin
 
+        n_features = 20
+        rng = StableRNG(seed)
+        
+        μ_c = 0.0
+        σ_c = 2.0
+        pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
+        feature_sampler = Sampler(pd, rng=copy(rng))
 
-    
+        sigma_fixed = Dict("sigma" => 10.0)
+
+        sff_test = ScalarFourierFeature(
+            n_features,
+            feature_sampler,
+            hyper_fixed = sigma_fixed,
+        )
+
+        # 1D input space
+        inputs_1d = reshape(collect(-1:0.01:1),(201,1))
+        features = build_features(sff_test,inputs_1d)
+
+        #test the values...
+        
+    end
+
 end

@@ -169,20 +169,20 @@ function build_features(
     xi = get_distribution(samp)["xi"] # dim_inputs x n_features
     features = inputs * xi # 1 x n_features
 
-    is_uniform_shift = "uniform" ∈ get_names(samp)
+    is_uniform_shift = "uniform" ∈ get_name(samp)
     if is_uniform_shift
         uniform = get_distribution(samp)["uniform"] # 1 x n_features
-        features += uniform
+        features .+= uniform
     end
     
-    sf = sqrt(2)*get_scalar_function(rf)
-    features = sf.(features)
+    sf = get_scalar_function(rf)
+    features = sqrt(2)*apply_scalar_function(sf,features)
 
-    is_sigma_scaling = "sigma" ∈ get_names(samp)
+    is_sigma_scaling = "sigma" ∈ get_name(samp)
     if is_sigma_scaling
         sigma = get_distribution(samp)["sigma"] # 1 x n_features
     else
-        sigma = get_fixed_sigma(rf) # scalar
+        sigma = get_hyper_fixed(rf)["sigma"] # scalar
     end
     features *= sigma
 

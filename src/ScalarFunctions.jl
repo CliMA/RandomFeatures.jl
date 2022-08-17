@@ -27,7 +27,7 @@ export
 
 abstract type ScalarFunction end
 
-apply_scalar_function(sf::ScalarFunction, r::AbstractVector) = apply_scalar_function.(Ref(sf),r) # Ref(sf) treats sf as a scalar for the broadcasting
+apply_scalar_function(sf::ScalarFunction, r::AbstractVecOrMat) = apply_scalar_function.(Ref(sf),r) # Ref(sf) treats sf as a scalar for the broadcasting
 
 struct Cosine <: ScalarFunction end
 function apply_scalar_function(sf::Cosine, r::Real)
