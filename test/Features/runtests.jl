@@ -29,7 +29,7 @@ using RandomFeatures.Features
 
            x_test_neg = collect(-1:0.1:-0.1)
            x_test_pos = collect(0:0.1:1)
-           println("Testing", af)
+           println("Testing ", af)
            @test all(apply_scalar_function(af, x_test_neg) .<= log(2)) # small for negative x
            
            if !isa(af,Sawtooth)
@@ -41,11 +41,22 @@ using RandomFeatures.Features
                @test all(apply_scalar_function(af, x_test_0pt5_1[2:end]) - apply_scalar_function(af, x_test_0pt5_1[1:end-1]) .<= 0) 
            end
        end
+
+       # others
+       sf = Features.Cosine() # as Distributions also has a Cosine()
+       println("Testing ", sf)
+       @test isa(sf,ScalarFunction)
        
+       x_test = collect(-1:0.1:1)
+       @test all(abs.(apply_scalar_function(sf,x_test) - cos.(x_test)) .< 2*eps())
+       
+    end
+
+    @testset "Constructors" begin
         
 
     end
-    
+
 
 
     
