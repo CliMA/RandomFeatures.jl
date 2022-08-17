@@ -3,6 +3,7 @@ using StableRNGs
 using StatsBase
 using LinearAlgebra
 using Random
+using Distributions
 using EnsembleKalmanProcesses.ParameterDistributions
 
 using RandomFeatures.Samplers
@@ -75,7 +76,7 @@ seed = 2202
         sigma_pd_err = constrained_gaussian("not sigma", hyper_μ_c, hyper_σ_c, 0.0, Inf)
         sigma_sampler_err = Sampler(sigma_pd_err, rng=copy(rng))
         sigma_pd = constrained_gaussian("sigma", hyper_μ_c, hyper_σ_c, 0.0, Inf)
-        sigma_sampler = Sampler(sigma_pd, rng=copy(rng))
+        sigma_sampler = Sampler(sigma_pd, rng=copy(rng),uniform_shift_bounds=nothing)
 
         sigma_fixed_err = Dict("not sigma" => 10.0)
         sigma_fixed = Dict("sigma" => 10.0)
@@ -171,7 +172,8 @@ seed = 2202
         pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
         feature_sampler = Sampler(pd, rng=copy(rng))
 
-        sigma_fixed = Dict("sigma" => 10.0)
+        sigma_value = 10.0
+        sigma_fixed = Dict("sigma" => sigma_value)
 
         sff_test = ScalarFourierFeature(
             n_features,
@@ -183,8 +185,14 @@ seed = 2202
         inputs_1d = reshape(collect(-1:0.01:1),(201,1))
         features = build_features(sff_test,inputs_1d)
 
-        #test the values...
+        rng1 = copy(rng)
+        samp_xi = reshape(sample(rng1, pd, n_features), (1, n_features))
+        samp_unif = reshape(rand(rng1, Uniform(0,2*pi), n_features), (1, n_features))
         
+        #test the values...
+        rf_test = sqrt(2) * sigma_value * cos.(inputs_1d * samp_xi .+ samp_unif)
+        print(abs.(rf_test - features))
+        @test all(abs.(rf_test - features) .< 10*eps())
     end
 
 end
