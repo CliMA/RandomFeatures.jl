@@ -189,10 +189,8 @@ seed = 2202
         samp_xi = reshape(sample(rng1, pd, n_features), (1, n_features))
         samp_unif = reshape(rand(rng1, Uniform(0,2*pi), n_features), (1, n_features))
         
-        #test the values...
         rf_test = sqrt(2) * sigma_value * cos.(inputs_1d * samp_xi .+ samp_unif)
-        print(abs.(rf_test - features))
-        @test all(abs.(rf_test - features) .< 10*eps())
+        @test all(abs.(rf_test - features) .< 10*eps()) # sufficiently big to deal with inaccuracy of cosine
     end
 
 end
