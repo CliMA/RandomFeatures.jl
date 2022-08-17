@@ -13,6 +13,7 @@ export
     get_parameter_distribution,
     get_optimizable_parameters,
     get_uniform_shift_bounds,
+    get_rng,
     sample
 
 struct Sampler
@@ -28,14 +29,6 @@ function Sampler(
     uniform_shift_bounds::Union{AbstractVector,Nothing}=[0,2*pi],
     rng::AbstractRNG = Random.GLOBAL_RNG,
 )
-    if "xi" ∉ get_name(parameter_distribution)
-        throw(
-            ArgumentError(
-                " named parameter \"xi\" not found in names of parameter_distribution. "*
-                " \n Please name the distribution to sample the features \"xi\""
-            )
-        )
-    end
     
     # adds a uniform distribution to the parameter distribution
     if isa(uniform_shift_bounds,AbstractVector)
@@ -47,7 +40,7 @@ function Sampler(
                     "name" => "uniform",
                 )
             )
-            pd = combine_distributions([parameter_distribution,unif_pd])
+            pd = combine_distributions([parameter_distribution, unif_pd])
         end
     else
         pd = parameter_distribution
@@ -66,6 +59,7 @@ end
 get_parameter_distribution(s::Sampler) = s.parameter_distribution
 get_optimizable_parameters(s::Sampler) = s.optimizable_parameters
 get_uniform_shift_bounds(s::Sampler) = s.uniform_shift_bounds
+get_rng(s::Sampler) = s.rng
 
 # methods - calls to ParameterDistribution methods
 #=
