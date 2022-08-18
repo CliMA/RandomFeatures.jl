@@ -222,7 +222,7 @@ seed = 2202
         rf_test2 = sqrt(2) * sigma_value * max.(inputs_10d * samp_xi .+ samp_unif, 0)
         @test size(features_10d) == (n_samples, n_features)
 
-        @test all(abs.(rf_test2 - features_10d) .< 1e3*eps()) # sufficiently big to deal with inaccuracy of cosine
+        @test all(abs.(rf_test2 - features_10d) .< 1e3*eps()) # sufficiently big to deal with inaccuracy of relu
 
         
         
