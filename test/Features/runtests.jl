@@ -170,27 +170,65 @@ seed = 2202
         μ_c = 0.0
         σ_c = 2.0
         pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
-        feature_sampler = FeatureSampler(pd, rng=copy(rng))
+        feature_sampler_1d = FeatureSampler(pd, rng=copy(rng))
 
         sigma_value = 10.0
         sigma_fixed = Dict("sigma" => sigma_value)
 
-        sff_test = ScalarFourierFeature(
+        sff_1d_test = ScalarFourierFeature(
             n_features,
-            feature_sampler,
+            feature_sampler_1d,
             hyper_fixed = sigma_fixed,
         )
 
-        # 1D input space
-        inputs_1d = reshape(collect(-1:0.01:1),(201,1))
-        features = build_features(sff_test,inputs_1d)
+        # 1D input space -> 1D output space
+        inputs_1d = reshape(collect(-1:0.01:1),(length(collect(-1:0.01:1)),1))
+        n_samples_1d = length(inputs_1d)
+        features_1d = build_features(sff_1d_test,inputs_1d)
 
         rng1 = copy(rng)
         samp_xi = reshape(sample(rng1, pd, n_features), (1, n_features))
         samp_unif = reshape(rand(rng1, Uniform(0,2*pi), n_features), (1, n_features))
         
         rf_test = sqrt(2) * sigma_value * cos.(inputs_1d * samp_xi .+ samp_unif)
-        @test all(abs.(rf_test - features) .< 10*eps()) # sufficiently big to deal with inaccuracy of cosine
+        @test size(features_1d) == (n_samples_1d,n_features)
+        @test all(abs.(rf_test - features_1d) .< 10*eps()) # sufficiently big to deal with inaccuracy of cosine
+
+        # 10D input space -> 1D output space
+        # generate a bunch of random samples as data points
+        n_samples = 200
+        inputs_10d = permutedims(rand(MvNormal(zeros(10), convert(Matrix,SymTridiagonal(2*ones(10),0.5*ones(9)))), n_samples), (2,1)) # n_samples x 10
+        # 10D indep gaussians on input space as feature distribution
+        pd_10d = ParameterDistribution(
+            Dict(        
+                "distribution" =>  VectorOfParameterized(repeat([Normal(μ_c, σ_c)],10)),
+                "constraint" => repeat([no_constraint()],10),
+                "name" => "xi",
+            )
+        )
+        feature_sampler_10d = FeatureSampler(pd_10d, rng=copy(rng))
+
+        sff_10d_test = ScalarNeuronFeature(
+            n_features,
+            feature_sampler_10d,
+            hyper_fixed = sigma_fixed,
+        )
+        
+        features_10d = build_features(sff_10d_test,inputs_10d)
+
+        rng2 = copy(rng)
+        samp_xi = reshape(sample(rng2, pd_10d, n_features), (10, n_features))
+        samp_unif = reshape(rand(rng2, Uniform(0,2*pi), n_features), (1, n_features))
+        rf_test2 = sqrt(2) * sigma_value * max.(inputs_10d * samp_xi .+ samp_unif, 0)
+        @test size(features_10d) == (n_samples, n_features)
+
+        @test all(abs.(rf_test2 - features_10d) .< 1e3*eps()) # sufficiently big to deal with inaccuracy of cosine
+
+        
+        
+        
+
     end
+
 
 end
