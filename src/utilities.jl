@@ -4,7 +4,7 @@ export
     batch_generator
 
 function batch_generator(
-    input::AbstractVecOrMat,
+    input::AbstractArray,
     batch_size::Int;
     dims::Int=1
 )
@@ -16,7 +16,7 @@ function batch_generator(
         for i in 1:n_batches
     ]
     
-    return [selectdim(input, dims, b) for b in batch_idx] #does input[:,...,b,...,:]
+    return [selectdim(input, dims, b) for b in batch_idx]
 end
     
 end   
