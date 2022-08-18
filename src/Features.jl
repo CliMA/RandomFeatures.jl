@@ -23,12 +23,10 @@ export
     get_hyper_fixed,
     build_features
     
-
-
 abstract type RandomFeature end
 
 function sample(rf::RandomFeature)
-    sampler = get_sampler(rf)
+    sampler = get_feature_sampler(rf)
     m = get_n_features(rf)
     return sample(sampler,m)
 end

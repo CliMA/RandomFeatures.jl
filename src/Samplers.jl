@@ -10,6 +10,8 @@ using
 
 export
     Sampler,
+    FeatureSampler,
+    HyperSampler,
     get_parameter_distribution,
     get_optimizable_parameters,
     get_uniform_shift_bounds,
@@ -23,7 +25,7 @@ struct Sampler
     rng::AbstractRNG
 end
 
-function Sampler(
+function FeatureSampler(
     parameter_distribution::ParameterDistribution;
     optimizable_parameters::Union{AbstractVector,Nothing}=nothing,
     uniform_shift_bounds::Union{AbstractVector,Nothing}=[0,2*pi],
@@ -51,6 +53,19 @@ function Sampler(
         pd,
         optimizable_parameters,
         uniform_shift_bounds,
+        rng,
+    )
+    
+end
+
+function HyperSampler(
+    parameter_distribution::ParameterDistribution;
+    rng::AbstractRNG = Random.GLOBAL_RNG,
+)
+    return Sampler(
+        parameter_distribution,
+        nothing,
+        nothing,
         rng,
     )
     

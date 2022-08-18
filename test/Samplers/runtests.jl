@@ -18,9 +18,18 @@ seed = 2022
     σ_c = 4.0
 
     pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
-    sampler = Sampler(pd)
-    @test get_optimizable_parameters(sampler) == nothing
-    @test get_uniform_shift_bounds(sampler) == [0,2*pi] 
+    hsampler = HyperSampler(pd)
+    @test get_optimizable_parameters(hsampler) == nothing
+    @test get_uniform_shift_bounds(hsampler) == nothing 
+    test_pd = get_parameter_distribution(hsampler)
+    @test get_distribution(test_pd) == get_distribution(pd)
+    @test get_all_constraints(test_pd) == get_all_constraints(pd)
+    @test get_name(test_pd) == get_name(pd)
+
+
+    fsampler = FeatureSampler(pd)
+    @test get_optimizable_parameters(fsampler) == nothing
+    @test get_uniform_shift_bounds(fsampler) == [0,2*pi] 
     unif_pd = ParameterDistribution(
         Dict(
             "distribution" => Parameterized(Uniform(0,2*π)),
@@ -30,15 +39,15 @@ seed = 2022
     )
     full_pd = combine_distributions([pd,unif_pd])
 
-    test_pd = get_parameter_distribution(sampler)
-    @test get_distribution(test_pd) == get_distribution(full_pd)
-    @test get_all_constraints(test_pd) == get_all_constraints(full_pd)
-    @test get_name(test_pd) == get_name(full_pd)
+    test_full_pd = get_parameter_distribution(fsampler)
+    @test get_distribution(test_full_pd) == get_distribution(full_pd)
+    @test get_all_constraints(test_full_pd) == get_all_constraints(full_pd)
+    @test get_name(test_full_pd) == get_name(full_pd)
     
     # and other option for settings
     usb = nothing
     oh = [:μ] 
-    sampler2 = Sampler(
+    sampler2 = FeatureSampler(
         pd,
         optimizable_parameters=oh,
         uniform_shift_bounds=usb
@@ -62,7 +71,7 @@ seed = 2022
 
     # first with global rng
     Random.seed!(seed)
-    sample1 = sample(sampler) # produces a Samples ParameterDistribution
+    sample1 = sample(fsampler) # produces a Samples ParameterDistribution
     Random.seed!(seed)
     test1 = sample_to_Sample(full_pd, sample(full_pd)) 
     @test get_distribution(sample1) == get_distribution(test1)
@@ -71,7 +80,7 @@ seed = 2022
 
     n_samples = 40
     Random.seed!(seed)
-    sample2 = sample(sampler, n_samples)
+    sample2 = sample(fsampler, n_samples)
     Random.seed!(seed)
     test2 = sample_to_Sample(full_pd, sample(full_pd, n_samples))
     @test get_distribution(sample2) == get_distribution(test2)
@@ -80,7 +89,7 @@ seed = 2022
 
     # now with two explicit rng's
     rng1 = Random.MersenneTwister(seed)
-    sampler_rng1 = Sampler(pd, rng=copy(rng1))
+    sampler_rng1 = FeatureSampler(pd, rng=copy(rng1))
     @test get_rng(sampler_rng1) == copy(rng1)
     sample3 = sample(sampler_rng1)
     @test !(get_rng(sampler_rng1) == copy(rng1))
@@ -90,7 +99,7 @@ seed = 2022
     @test get_name(sample3) == get_name(test3)
    
     
-    sampler_rng1 = Sampler(pd, rng=copy(rng1))
+    sampler_rng1 = FeatureSampler(pd, rng=copy(rng1))
     sample4 = sample(sampler_rng1, n_samples)
     test4 = sample_to_Sample(full_pd, sample(copy(rng1), full_pd, n_samples))
     @test get_distribution(sample4) == get_distribution(test4)
@@ -99,14 +108,14 @@ seed = 2022
 
     #this time override use rng2 to override the default Random.GLOBAL_RNG at the point of sampling
     rng2 = StableRNG(seed)
-    sample5 = sample(copy(rng2), sampler)
+    sample5 = sample(copy(rng2), fsampler)
     test5 = sample_to_Sample(full_pd, sample(copy(rng2), full_pd, 1))
     @test get_distribution(sample5) == get_distribution(test5)
     @test get_all_constraints(sample5) == get_all_constraints(test5)
     @test get_name(sample5) == get_name(test5)
 
     
-    sample6 = sample(copy(rng2), sampler, n_samples)
+    sample6 = sample(copy(rng2), fsampler, n_samples)
     test6 = sample_to_Sample(full_pd, sample(copy(rng2), full_pd, n_samples))
     @test get_distribution(sample6) == get_distribution(test6)
     @test get_all_constraints(sample6) == get_all_constraints(test6)

@@ -66,17 +66,17 @@ seed = 2202
         μ_c = 0.0
         σ_c = 2.0
         pd_err = constrained_gaussian("test", μ_c, σ_c, -Inf, Inf)
-        feature_sampler_err = Sampler(pd_err, rng=copy(rng))
+        feature_sampler_err = FeatureSampler(pd_err, rng=copy(rng))
         pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
-        feature_sampler = Sampler(pd, rng=copy(rng))
+        feature_sampler = FeatureSampler(pd, rng=copy(rng))
 
         # postive constraints for sigma
         hyper_μ_c = 10.0
         hyper_σ_c = 1.0
         sigma_pd_err = constrained_gaussian("not sigma", hyper_μ_c, hyper_σ_c, 0.0, Inf)
-        sigma_sampler_err = Sampler(sigma_pd_err, rng=copy(rng))
+        sigma_sampler_err = HyperSampler(sigma_pd_err, rng=copy(rng))
         sigma_pd = constrained_gaussian("sigma", hyper_μ_c, hyper_σ_c, 0.0, Inf)
-        sigma_sampler = Sampler(sigma_pd, rng=copy(rng),uniform_shift_bounds=nothing)
+        sigma_sampler = HyperSampler(sigma_pd, rng=copy(rng))
 
         sigma_fixed_err = Dict("not sigma" => 10.0)
         sigma_fixed = Dict("sigma" => 10.0)
@@ -125,7 +125,7 @@ seed = 2202
         @test get_hyper_fixed(sf_test) == nothing # gets set to nothing when two are defined       
         
         # ScalarFeature and getters
-        feature_sampler = Sampler(pd, rng=copy(rng)) # to reset the rng
+        feature_sampler = FeatureSampler(pd, rng=copy(rng)) # to reset the rng
         sf_test = ScalarFeature(
             n_features,
             feature_sampler,
@@ -170,7 +170,7 @@ seed = 2202
         μ_c = 0.0
         σ_c = 2.0
         pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
-        feature_sampler = Sampler(pd, rng=copy(rng))
+        feature_sampler = FeatureSampler(pd, rng=copy(rng))
 
         sigma_value = 10.0
         sigma_fixed = Dict("sigma" => sigma_value)
