@@ -5,6 +5,6 @@ using StatsBase
 using LinearAlgebra
 using Random
 
-@testset "RandomFeatureMethod" begin
+@testset "RandomFeatureMethods" begin
 
 end

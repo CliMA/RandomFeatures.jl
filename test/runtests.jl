@@ -19,9 +19,10 @@ end
     end
 
     for submodule in [
+        "Utilities",
         "Samplers",
         "Features",
-        "RandomFeatureMethod",
+        "RandomFeatureMethods",
         "HyperparameterOptimizers",
     ]
         if all_tests || has_submodule(submodule) || "RandomFeatures" in ARGS
