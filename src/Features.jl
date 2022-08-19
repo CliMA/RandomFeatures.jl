@@ -38,8 +38,6 @@ end
 # function set_optimized_parameters(rf::RandomFeature, optimized_parameters)
 # 
 # end
-
-
 struct ScalarFeature <: RandomFeature
     n_features::Int
     feature_sampler::Sampler
@@ -163,17 +161,20 @@ end
 
 function build_features(
     rf::ScalarFeature,
-    inputs::AbstractMatrix # n_data_pts x dim_inputs
+    inputs_t::AbstractMatrix, # input_dim x n_sample
+    feature_idx,
 )
+    inputs = permutedims(inputs_t,(2,1)) # n_sample x input_dim
+    
     # build: sigma * sqrt(2) * scalar_function(xi . input + b)
     samp = get_feature_sample(rf)
     xi = get_distribution(samp)["xi"] # dim_inputs x n_features
-    features = inputs * xi # n_samples x n_features
+    features = inputs * xi[:,feature_idx] # n_samples x n_features
 
     is_uniform_shift = "uniform" ∈ get_name(samp)
     if is_uniform_shift
         uniform = get_distribution(samp)["uniform"] # 1 x n_features
-        features .+= uniform
+        features .+= uniform[:,feature_idx]
     end
     
     sf = get_scalar_function(rf)
@@ -181,7 +182,7 @@ function build_features(
 
     is_sigma_scaling = "sigma" ∈ get_name(samp)
     if is_sigma_scaling
-        sigma = get_distribution(samp)["sigma"] # 1 x n_features
+        sigma = get_distribution(samp)["sigma"]
     else
         sigma = get_hyper_fixed(rf)["sigma"] # scalar
     end
@@ -189,6 +190,8 @@ function build_features(
 
     return features
 end
+
+build_features(rf::ScalarFeature, inputs::AbstractMatrix) = build_features(rf, inputs, collect(1:get_n_features(rf)))
 
  
 end #module
