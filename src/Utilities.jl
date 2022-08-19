@@ -7,6 +7,7 @@ export
     Decomposition,
     get_decomposition_is_inverse,
     get_decomposition,
+    get_full_matrix,
     linear_solve
 
 """
