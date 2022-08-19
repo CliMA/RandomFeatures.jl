@@ -182,22 +182,22 @@ seed = 2202
         )
 
         # 1D input space -> 1D output space
-        inputs_1d = reshape(collect(-1:0.01:1),(length(collect(-1:0.01:1)),1))
+        inputs_1d = reshape(collect(-1:0.01:1),(1,length(collect(-1:0.01:1))))
         n_samples_1d = length(inputs_1d)
         features_1d = build_features(sff_1d_test,inputs_1d)
 
         rng1 = copy(rng)
         samp_xi = reshape(sample(rng1, pd, n_features), (1, n_features))
         samp_unif = reshape(rand(rng1, Uniform(0,2*pi), n_features), (1, n_features))
-        
-        rf_test = sqrt(2) * sigma_value * cos.(inputs_1d * samp_xi .+ samp_unif)
-        @test size(features_1d) == (n_samples_1d,n_features)
+        inputs_1d_T = permutedims(inputs_1d, (2,1))
+        rf_test = sqrt(2) * sigma_value * cos.(inputs_1d_T * samp_xi .+ samp_unif)
+        @test size(features_1d) == (n_samples_1d, n_features)
         @test all(abs.(rf_test - features_1d) .< 10*eps()) # sufficiently big to deal with inaccuracy of cosine
 
         # 10D input space -> 1D output space
         # generate a bunch of random samples as data points
         n_samples = 200
-        inputs_10d = permutedims(rand(MvNormal(zeros(10), convert(Matrix,SymTridiagonal(2*ones(10),0.5*ones(9)))), n_samples), (2,1)) # n_samples x 10
+        inputs_10d = rand(MvNormal(zeros(10), convert(Matrix,SymTridiagonal(2*ones(10),0.5*ones(9)))), n_samples) # 10 x n_samples
         # 10D indep gaussians on input space as feature distribution
         pd_10d = ParameterDistribution(
             Dict(        
@@ -214,19 +214,16 @@ seed = 2202
             hyper_fixed = sigma_fixed,
         )
         
-        features_10d = build_features(sff_10d_test,inputs_10d)
+        features_10d = build_features(sff_10d_test, inputs_10d)
 
         rng2 = copy(rng)
         samp_xi = reshape(sample(rng2, pd_10d, n_features), (10, n_features))
         samp_unif = reshape(rand(rng2, Uniform(0,2*pi), n_features), (1, n_features))
-        rf_test2 = sqrt(2) * sigma_value * max.(inputs_10d * samp_xi .+ samp_unif, 0)
+        inputs_10d_T = permutedims(inputs_10d, (2,1))
+        rf_test2 = sqrt(2) * sigma_value * max.(inputs_10d_T * samp_xi .+ samp_unif, 0)
         @test size(features_10d) == (n_samples, n_features)
 
         @test all(abs.(rf_test2 - features_10d) .< 1e3*eps()) # sufficiently big to deal with inaccuracy of relu
-
-        
-        
-        
 
     end
 
