@@ -1,4 +1,4 @@
-module RandomFeatureMethods
+module Methods
 
 import StatsBase: sample
 import RandomFeatures.Utilities: Decomposition 
@@ -28,6 +28,36 @@ struct RandomFeatureMethod
     rf::RandomFeature
     batch_sizes::Dict #keys "train", "test" , "features"
     regularization::Real
+end
+
+function RandomFeatureMethod(rf::RandomFeature, batch_sizes::Dict,regularization::Real=1e12*eps())
+
+    if !all([key ∈ keys(batch_sizes) for key in ["train","test","feature"]])
+        throw(ArgumentError("batch_sizes keys must contain all of \"train\", \"test\", and \"feature\""))
+    end
+    if regularization < 0
+        @info "input regularization < 0 is invalid, using regularization = 1e12*eps()"
+        lamdba = 1e12*eps()
+    elseif regularization == 0
+        @warn "input regularization set to 0, it is recommended to increase lambda (else only a pseudo-inverse will be used for the linear solve)"
+        lambda = regularization
+    else
+        lambda = regularization
+    end    
+            
+    return RandomFeatureMethod(rf, batch_sizes, lambda)
+end
+
+function RandomFeatureMethod(rf::RandomFeature, regularization::Real)        
+
+    #batch_size = 0 will not perform batching
+    batch_size = Dict(
+        "train" => 0,
+        "test" => 0,
+        "feature" => 0
+    )
+
+    return RandomFeatureMethod(rf,batch_sizes,regularization)
 end
 
 get_random_feature(rfm::RandomFeatureMethod) = rfm.rf
@@ -96,7 +126,7 @@ function predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCon
     outputs = zeros(1,size(inputs,2))
 
     test_batch_size = get_batch_size(rfm, "test")
-    features_batch_size = get_batch_size(rfm, "features")
+    features_batch_size = get_batch_size(rfm, "feature")
     rf = get_random_feature(rfm)
 
     n_features = get_n_features(rf)

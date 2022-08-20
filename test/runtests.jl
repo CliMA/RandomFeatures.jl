@@ -22,7 +22,7 @@ end
         "Utilities",
         "Samplers",
         "Features",
-        "RandomFeatureMethods",
+        "Methods",
         "HyperparameterOptimizers",
     ]
         if all_tests || has_submodule(submodule) || "RandomFeatures" in ARGS
