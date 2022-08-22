@@ -75,7 +75,7 @@ seed = 2023
         @test get_regularization(rfm_default) ≈ 1e12*eps()
     end
 
-    @testset "Fit" begin
+    @testset "Fit and predict" begin
         rng = StableRNG(seed)
         
         #problem formulation
@@ -117,11 +117,16 @@ seed = 2023
 
         batch_sizes = Dict("train" => 10, "test" => 0, "feature" => 20)
         
-        rfm = RandomFeatureMethod(sff, batch_sizes=batch_sizes)
+        rfm_batch = RandomFeatureMethod(sff, batch_sizes=batch_sizes)
 
-        fitted_batched_features = fit(rfm, io_pairs)
-        coeffs_batched = get_coeffs(fitted_features)
+        fitted_batched_features = fit(rfm_batch, io_pairs)
+        coeffs_batched = get_coeffs(fitted_batched_features)
         @test coeffs ≈ coeffs_batched
+
+        # test prediction
+        
+
+        
 
     end
     
