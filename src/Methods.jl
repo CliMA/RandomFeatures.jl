@@ -1,6 +1,6 @@
 module Methods
 
-import StatsBase: sample
+import StatsBase: sample, fit
 import RandomFeatures.Utilities: Decomposition 
 import RandomFeatures.Utilities: batch_generator, linear_solve, get_decomposition_is_inverse, get_decomposition
 
@@ -18,7 +18,7 @@ export
     sample,
     get_feature_factors,
     get_coeffs,
-    fit!,
+    fit,
     predict,
     predictive_mean,
     predictive_cov
@@ -30,14 +30,22 @@ struct RandomFeatureMethod
     regularization::Real
 end
 
-function RandomFeatureMethod(rf::RandomFeature, batch_sizes::Dict,regularization::Real=1e12*eps())
-
+function RandomFeatureMethod(
+    rf::RandomFeature;
+    regularization::Real=1e12*eps(),
+    batch_sizes::Dict=Dict{AbstractString,Int}(
+        "train" => 0,
+        "test" => 0,
+        "feature" => 0,
+    ),
+)
+    
     if !all([key ∈ keys(batch_sizes) for key in ["train","test","feature"]])
         throw(ArgumentError("batch_sizes keys must contain all of \"train\", \"test\", and \"feature\""))
     end
     if regularization < 0
         @info "input regularization < 0 is invalid, using regularization = 1e12*eps()"
-        lamdba = 1e12*eps()
+        lambda = 1e12*eps()
     elseif regularization == 0
         @warn "input regularization set to 0, it is recommended to increase lambda (else only a pseudo-inverse will be used for the linear solve)"
         lambda = regularization
@@ -48,23 +56,13 @@ function RandomFeatureMethod(rf::RandomFeature, batch_sizes::Dict,regularization
     return RandomFeatureMethod(rf, batch_sizes, lambda)
 end
 
-function RandomFeatureMethod(rf::RandomFeature, regularization::Real)        
-
-    #batch_size = 0 will not perform batching
-    batch_size = Dict(
-        "train" => 0,
-        "test" => 0,
-        "feature" => 0
-    )
-
-    return RandomFeatureMethod(rf,batch_sizes,regularization)
-end
-
 get_random_feature(rfm::RandomFeatureMethod) = rfm.rf
 get_batch_sizes(rfm::RandomFeatureMethod) = rfm.batch_sizes
 get_regularization(rfm::RandomFeatureMethod) = rfm.regularization
 sample(rfm::RandomFeatureMethod) = sample(rfm.rf)
 
+get_batch_size(rfm::RandomFeatureMethod, key::AbstractString) = get_batch_sizes(rfm)[key]
+    
 struct Fit
     feature_factors::Decomposition
     coeffs::AbstractVector
@@ -74,19 +72,20 @@ get_feature_factors(f::Fit) = f.feature_factors
 get_coeffs(f::Fit) = f.coeffs
 
 
-function fit!(
+function fit(
     rfm::RandomFeatureMethod,
-    input_output_pairs::PairedDataContainer,
+    input_output_pairs::PairedDataContainer;
     decomposition_type::AbstractString = "svd"
 )
 
-    (input,output) = get_data(input_output_pairs)
+    (input,output) = get_data(input_output_pairs) 
     output_dim = size(output,1) # for scalar features this is 1
 
     train_batch_size = get_batch_size(rfm, "train")
     rf = get_random_feature(rfm)
     n_features = get_n_features(rf)
     #data are columns, batch over samples
+
     batch_input = batch_generator(input, train_batch_size, dims=2) # input_dim x batch_size
     batch_output = batch_generator(output, train_batch_size, dims=2) # output_dim x batch_size
 
@@ -95,7 +94,7 @@ function fit!(
     
     for (ib,ob) in zip(batch_input, batch_output)
         batch_feature = build_features(rf, ib) # batch_size x n_features
-        PhiTY += permutedims(batch_feature,(2,1)) * ob
+        PhiTY += permutedims(batch_feature,(2,1)) * permutedims(ob,(2,1)) 
         PhiTPhi +=  permutedims(batch_feature,(2,1)) * batch_feature 
     end
     PhiTPhi /= n_features
@@ -105,13 +104,14 @@ function fit!(
 
     lambda = get_regularization(rfm)
     if lambda == 0
-       feature_factors = Decomposition(PhiTPhi, method="pinv")
+        feature_factors = Decomposition(PhiTPhi, "pinv")
     else
-        feature_factors = Decomposition(PhiTPhi + lambda * I, method=decomposition_type)
+        feature_factors = Decomposition(PhiTPhi + lambda * I, decomposition_type)
     end
+
     coeffs = linear_solve(feature_factors, PhiTY)
 
-    return Fit(Decomposition, coeffs)   
+    return Fit(feature_factors, coeffs[:])   
 end
 
 function predict(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer)

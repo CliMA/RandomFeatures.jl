@@ -27,6 +27,11 @@ using RandomFeatures.Utilities
             x[:, (i-1)*batch_size+1:i*batch_size] :
             x[:, (i-1)*batch_size+1:end])
     end
+    
+    x3 = batch_generator(x,0) #default dims=1
+    @test length(x3) == 1
+    @test x3[1] == x
+    
 
     # Decomposition
     N = 30

@@ -22,8 +22,8 @@ function batch_generator(
     batch_size::Int;
     dims::Int=1
 )
-    if batch_size <= 0 
-        return array
+    if batch_size == 0 
+        return [array]
     end
     
     n_batches = Int(ceil(size(array,dims)/batch_size))
@@ -70,7 +70,7 @@ function linear_solve(d::Decomposition, rhs::AbstractVecOrMat)
     decomp = get_decomposition(d)
     if get_decomposition_is_inverse(d)
         #in this case the stored decomposition IS the (pseudo)inverse
-        return decomp*rhs
+        return decomp * rhs
     else
         #in this case the stored decomposition is just a factorization
         return decomp \ rhs
