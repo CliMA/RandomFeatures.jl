@@ -133,8 +133,8 @@ end
 
 function ScalarNeuronFeature(
     n_features::Int,
-    sampler::Sampler,
-    activation_fun::ScalarActivation=Relu();
+    sampler::Sampler;
+    activation_fun::ScalarActivation=Relu(),
     hyper_sampler::Union{Sampler,Nothing}=nothing,
     hyper_fixed=nothing,
 )
@@ -188,7 +188,7 @@ function build_features(
     end
     features *= sigma
 
-    return features
+    return features # n
 end
 
 build_features(rf::ScalarFeature, inputs::AbstractMatrix) = build_features(rf, inputs, collect(1:get_n_features(rf)))
