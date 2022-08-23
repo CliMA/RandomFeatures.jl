@@ -5,7 +5,6 @@ TEST_PLOT_FLAG = !isempty(get(ENV, "TEST_PLOT_FLAG", ""))
 
 if TEST_PLOT_FLAG
     using Plots, ColorSchemes
-    clibrary
 end
 
 
