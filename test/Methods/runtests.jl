@@ -5,7 +5,9 @@ using StatsBase
 using LinearAlgebra
 using Random
 using EnsembleKalmanProcesses.DataContainers
+using EnsembleKalmanProcesses.ParameterDistributions
 
+using RandomFeatures.Utilities
 using RandomFeatures.Samplers
 using RandomFeatures.Features
 using RandomFeatures.Methods
@@ -91,7 +93,7 @@ seed = 2023
         
         #specify features 
         μ_c = 0.0
-        σ_c = 2.0
+        σ_c = 0.1
         pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
         feature_sampler = FeatureSampler(pd, rng=copy(rng))
         
@@ -115,7 +117,7 @@ seed = 2023
 
         #second case with batching
 
-        batch_sizes = Dict("train" => 10, "test" => 0, "feature" => 20)
+        batch_sizes = Dict("train" => 10, "test" => 100, "feature" => 20)
         
         rfm_batch = RandomFeatureMethod(sff, batch_sizes=batch_sizes)
 
@@ -124,8 +126,15 @@ seed = 2023
         @test coeffs ≈ coeffs_batched
 
         # test prediction
-        
+        ntest = 1000
+        xtest = DataContainer(reshape(rand(rng, Uniform(0,2*pi), ntest),1,:), data_are_columns=true)
 
+        pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
+        ytest = sin.(get_data(xtest))
+
+        println("L^2 error", sqrt(sum((ytest - pred_mean).^2)))
+        println("weighted error", sqrt(sum((1 ./ pred_cov.^2) .* (ytest - pred_mean).^2)))
+         
         
 
     end

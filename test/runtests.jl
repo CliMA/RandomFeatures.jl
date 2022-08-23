@@ -19,9 +19,9 @@ end
     end
 
     for submodule in [
-        "Utilities",
-        "Samplers",
-        "Features",
+#        "Utilities",
+#        "Samplers",
+#        "Features",
         "Methods",
         "HyperparameterOptimizers",
     ]

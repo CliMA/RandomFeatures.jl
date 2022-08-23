@@ -1,12 +1,14 @@
 module Methods
 
-import StatsBase: sample, fit
-import RandomFeatures.Utilities: Decomposition 
-import RandomFeatures.Utilities: batch_generator, linear_solve, get_decomposition_is_inverse, get_decomposition
+import StatsBase: sample, fit, predict
+
+#import RandomFeatures.Utilities: Decomposition 
+#import RandomFeatures.Utilities: batch_generator, linear_solve, get_decomposition_is_inverse, get_decomposition
 
 using
     LinearAlgebra,
     RandomFeatures.Features,
+    RandomFeatures.Utilities,
     EnsembleKalmanProcesses.DataContainers
 
 export
@@ -26,7 +28,7 @@ export
 
 struct RandomFeatureMethod
     rf::RandomFeature
-    batch_sizes::Dict #keys "train", "test" , "features"
+    batch_sizes::Dict #keys "train", "test" , "feature"
     regularization::Real
 end
 
@@ -131,7 +133,7 @@ function predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCon
 
     n_features = get_n_features(rf)
 
-    coeffs = get_feature_coeffs(fit) 
+    coeffs = get_coeffs(fit) 
     
     batch_inputs = batch_generator(inputs, test_batch_size, dims=2) # input_dim x batch_size
     batch_outputs = batch_generator(outputs, test_batch_size, dims=2) # input_dim x batch_size
@@ -141,7 +143,7 @@ function predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCon
     for (ib, ob) in zip(batch_inputs, batch_outputs)
         for (cb, fb_i) in zip(batch_coeffs, batch_feature_idx)
             features = build_features(rf, ib, fb_i) # n_samples x n_features
-            ob += features * cb / n_features # n_samples x 1
+            ob += permutedims(features * reshape(cb,:,1) / n_features , (2,1)) # 1 x n_samples 
         end
     end
     
@@ -156,13 +158,13 @@ function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCont
     inputs = get_data(new_inputs)
     
     test_batch_size = get_batch_size(rfm, "test")
-    features_batch_size = get_batch_size(rfm, "features")
+    features_batch_size = get_batch_size(rfm, "feature")
     rf = get_random_feature(rfm)
     lambda = get_regularization(rfm)
     
     n_features = get_n_features(rf)
 
-    coeffs = get_feature_coeffs(fit) 
+    coeffs = get_coeffs(fit) 
     PhiTPhi_reg_factors = get_feature_factors(fit)
     PhiTPhi_reg = get_full_matrix(PhiTPhi_reg_factors)
     PhiTPhi = PhiTPhi_reg - lambda * I
@@ -171,7 +173,7 @@ function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCont
     cov_outputs = zeros(1,size(inputs,2)) # 
     
     batch_inputs = batch_generator(inputs, test_batch_size, dims=2) # input_dim x batch_size
-    batch_outputs = batch_generator(outputs, test_batch_size, dims=2) # 1 x batch_size
+    batch_outputs = batch_generator(cov_outputs, test_batch_size, dims=2) # 1 x batch_size
     batch_coeff_outputs = batch_generator(coeff_outputs, test_batch_size, dims=2)
     
     for (ib, ob, cob) in zip(batch_inputs, batch_outputs, batch_coeff_outputs)
