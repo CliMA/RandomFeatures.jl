@@ -1,5 +1,13 @@
 using Test
 
+
+TEST_PLOT_FLAG = !isempty(get(ENV, "TEST_PLOT_FLAG", ""))
+
+if TEST_PLOT_FLAG
+    using Plots, ColorSchemes
+end
+
+
 function include_test(_module)
     println("Starting tests for $_module")
     t = @elapsed include(joinpath(_module, "runtests.jl"))
