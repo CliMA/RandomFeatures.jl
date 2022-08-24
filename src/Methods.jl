@@ -13,6 +13,7 @@ export
     Fit,
     get_random_feature,
     get_batch_sizes,
+    get_batch_size,
     get_regularization,
     sample,
     get_feature_factors,
@@ -21,8 +22,9 @@ export
     predict,
     predictive_mean,
     predictive_cov,
-    predict_prior_mean
-
+    predict_prior,
+    predict_prior_mean,
+    predict_prior_cov
 
 struct RandomFeatureMethod
     rf::RandomFeature
@@ -96,20 +98,20 @@ function fit(
         PhiTY .+= permutedims(batch_feature,(2,1)) * permutedims(ob,(2,1)) 
         PhiTPhi .+=  permutedims(batch_feature,(2,1)) * batch_feature 
     end
-    PhiTPhi /= n_features
-
+    PhiTPhi ./= n_features
+    
     # solve the linear system
     # (PhiTPhi + lambda * I) * beta = PhiTY
-
+    
     lambda = get_regularization(rfm)
     if lambda == 0
         feature_factors = Decomposition(PhiTPhi, "pinv")
     else
         feature_factors = Decomposition(PhiTPhi + lambda * I, decomposition_type)
     end
-
+    
     coeffs = linear_solve(feature_factors, PhiTY)
-
+    
     return Fit(feature_factors, coeffs[:])   
 end
 
@@ -119,30 +121,57 @@ function predict(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer)
     return pred_mean, pred_cov
 end
 
+
+function predict_prior(rfm::RandomFeatureMethod, new_inputs::DataContainer)
+    return predict_prior_mean(rfm, new_inputs), predict_prior_cov(rfm, new_inputs)
+end
+
 function predict_prior_mean(rfm::RandomFeatureMethod, new_inputs::DataContainer)
     rf = get_random_feature(rfm)
     n_features = get_n_features(rf) 
     coeffs = ones(n_features)
     return predictive_mean(rfm, coeffs, new_inputs)
-end    
+end
+
+function predict_prior_cov(rfm::RandomFeatureMethod, new_inputs::DataContainer)
+    inputs = get_data(new_inputs)
+    
+    test_batch_size = get_batch_size(rfm, "test")
+    features_batch_size = get_batch_size(rfm, "feature")
+    rf = get_random_feature(rfm)
+    
+    n_features = get_n_features(rf)
+    
+    cov_outputs = zeros(1,size(inputs,2)) # 
+    
+    batch_inputs = batch_generator(inputs, test_batch_size, dims=2) # input_dim x batch_size
+    batch_outputs = batch_generator(cov_outputs, test_batch_size, dims=2) # 1 x batch_size
+    
+    for (ib, ob) in zip(batch_inputs, batch_outputs)
+        features = build_features(rf, ib) # bsize x n_features  
+        # here we do a pointwise calculation of var (1d output) for each test point
+        ob .+= sum(permutedims(features,(2,1)) .* (permutedims(features,(2,1)) - ones(size(features))'), dims=1) / n_features 
+    end
+    return cov_outputs 
+end
 
 predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer) = predictive_mean(rfm, get_coeffs(fit), new_inputs)
 
 function predictive_mean(rfm::RandomFeatureMethod, coeffs::AbstractVector, new_inputs::DataContainer)
-
+    
     inputs = get_data(new_inputs)
     outputs = zeros(1,size(inputs,2))
-
+    
     test_batch_size = get_batch_size(rfm, "test")
     features_batch_size = get_batch_size(rfm, "feature")
     rf = get_random_feature(rfm)
-
+    
     n_features = get_n_features(rf) 
     
     batch_inputs = batch_generator(inputs, test_batch_size, dims=2) # input_dim x batch_size
     batch_outputs = batch_generator(outputs, test_batch_size, dims=2) # input_dim x batch_size
-    batch_coeffs = batch_generator(coeffs, features_batch_size)
-    batch_feature_idx = batch_generator(collect(1:n_features), features_batch_size)
+    batch_coeffs = batch_generator(coeffs, features_batch_size) # batch_size
+    batch_feature_idx = batch_generator(collect(1:n_features), features_batch_size) # batch_size
 
     for (ib, ob) in zip(batch_inputs, batch_outputs)
         for (cb, fb_i) in zip(batch_coeffs, batch_feature_idx)
@@ -175,7 +204,7 @@ function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCont
     PhiTPhi = PhiTPhi_reg - lambda * I
     
     coeff_outputs = zeros(n_features,size(inputs,2))
-    cov_outputs = zeros(1,size(inputs,2)) # 
+    cov_outputs = zeros(1,size(inputs,2))  
     
     batch_inputs = batch_generator(inputs, test_batch_size, dims=2) # input_dim x batch_size
     batch_outputs = batch_generator(cov_outputs, test_batch_size, dims=2) # 1 x batch_size
@@ -183,13 +212,14 @@ function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCont
     
     for (ib, ob, cob) in zip(batch_inputs, batch_outputs, batch_coeff_outputs)
         features = build_features(rf, ib) # bsize x n_features  
-        rhs = PhiTPhi * permutedims(features, (2,1)) # n_features x bsize
+        rhs = PhiTPhi * permutedims(features, (2,1)) # = 1/m * phi(X)^T * phi(X) * phi(x')^T = phi(X)^T * k(X,x')
         c_tmp = linear_solve(PhiTPhi_reg_factors, rhs) # n_features x bsize
         #Dot very important
         cob .+= c_tmp
         # here we do a pointwise calculation of var (1d output) for each test point
         ob .+= sum(permutedims(features,(2,1)) .* (permutedims(features,(2,1)) - c_tmp), dims=1) / n_features 
     end
+    
     return cov_outputs, coeff_outputs
 end
 
