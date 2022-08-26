@@ -252,7 +252,7 @@ for i in 1:N_iter
     println("Iteration: " * string(i) * ", Error: " * string(err[i]))
 end
 
-println(mean(get_u_final(ekiobj),dims=2))
+println(transform_unconstrained_to_constrained(priors,mean(get_u_final(ekiobj),dims=2)))
 
 
 
