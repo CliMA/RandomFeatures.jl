@@ -112,32 +112,43 @@ seed = 2023
             xtest = DataContainer(reshape(xtestvec,1,:), data_are_columns=true)
             ytest = ftest(get_data(xtest))
             
-            #specify features (lengthscale and sigma are magic numbers)
+            # specify feature distributions
+            # NB we optimize hyperparameter values (σ_c,"sigma") in examples/Learn_hyperparameters/1d_to_1d_regression.jl
+            # Such values may change with different ftest and different noise_sd
+            
             μ_c = 0.0
-            σ_c = 3.0
+            σ_c = 0.8
             pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
             feature_sampler = FeatureSampler(pd, rng=copy(rng))
-            feature_sampler_snf = FeatureSampler(pd, rng=copy(rng))
-            feature_sampler_ssf = FeatureSampler(pd, rng=copy(rng))
-            
-            sigma_fixed = Dict("sigma" => 3.0)
+
+            sigma_fixed = Dict("sigma" => 1.05)
             sff = ScalarFourierFeature(
                 n_features,
                 feature_sampler,
                 hyper_fixed =  sigma_fixed
             )
             
+            μ_c = 0.0
+            σ_c = 1.55
+            pd_snf = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
+            feature_sampler_snf = FeatureSampler(pd_snf, rng=copy(rng))
+            sigma_fixed_snf = Dict("sigma" => 1.23)
             snf = ScalarNeuronFeature(
                 n_features,
                 feature_sampler_snf,
-                hyper_fixed =  sigma_fixed
+                hyper_fixed =  sigma_fixed_snf,
             )
             
+            μ_c = 0.0
+            σ_c = 1.14
+            pd_ssf = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
+            feature_sampler_ssf = FeatureSampler(pd_ssf, rng=copy(rng))
+            sigma_fixed_ssf = Dict("sigma" => 2.03)
             ssf = ScalarFeature(
                 n_features,
                 feature_sampler_ssf,
                 Sigmoid(),
-                hyper_fixed =  sigma_fixed,
+                hyper_fixed =  sigma_fixed_ssf,
             )
             #first case without batches
             lambda = noise_sd^2
@@ -235,7 +246,7 @@ end # testset "Fit and predict"
     ytest = ftest_nd_to_1d(get_data(xtest))
 
     
-    #specify features (lengthscale and sigma are magic numbers)
+   #specify features (σ_c and sigma are magic numbers)
     μ_c = 0.0
     σ_c = 3.0
     pd = ParameterDistribution(
