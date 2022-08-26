@@ -31,7 +31,6 @@ end
         "Samplers",
         "Features",
         "Methods",
-        "HyperparameterOptimizers",
     ]
         if all_tests || has_submodule(submodule) || "RandomFeatures" in ARGS
             include_test(submodule)
