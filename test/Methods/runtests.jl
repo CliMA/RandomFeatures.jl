@@ -117,11 +117,11 @@ seed = 2023
             # Such values may change with different ftest and different noise_sd
             
             μ_c = 0.0
-            σ_c = 0.8
+            σ_c = exp(0.8)
             pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
             feature_sampler = FeatureSampler(pd, rng=copy(rng))
 
-            sigma_fixed = Dict("sigma" => 1.05)
+            sigma_fixed = Dict("sigma" => exp(1.05))
             sff = ScalarFourierFeature(
                 n_features,
                 feature_sampler,
@@ -129,10 +129,10 @@ seed = 2023
             )
             
             μ_c = 0.0
-            σ_c = 1.55
+            σ_c = exp(1.55)
             pd_snf = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
             feature_sampler_snf = FeatureSampler(pd_snf, rng=copy(rng))
-            sigma_fixed_snf = Dict("sigma" => 1.23)
+            sigma_fixed_snf = Dict("sigma" => exp(1.23))
             snf = ScalarNeuronFeature(
                 n_features,
                 feature_sampler_snf,
@@ -140,10 +140,10 @@ seed = 2023
             )
             
             μ_c = 0.0
-            σ_c = 1.14
+            σ_c = exp(1.14)
             pd_ssf = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
             feature_sampler_ssf = FeatureSampler(pd_ssf, rng=copy(rng))
-            sigma_fixed_ssf = Dict("sigma" => 2.03)
+            sigma_fixed_ssf = Dict("sigma" => exp(2.03))
             ssf = ScalarFeature(
                 n_features,
                 feature_sampler_ssf,
@@ -246,9 +246,10 @@ end # testset "Fit and predict"
     ytest = ftest_nd_to_1d(get_data(xtest))
 
     
-   #specify features (σ_c and sigma are magic numbers)
+    # specify features
+    # note the σ_c and sigma values come from `examples/Learn_hyperparameters/nd_to_1d_regression.jl`
     μ_c = 0.0
-    σ_c = 3.0
+    σ_c = 53.1
     pd = ParameterDistribution(
         Dict(
             "distribution" => VectorOfParameterized(repeat([Normal(μ_c,σ_c)],input_dim)),
@@ -257,7 +258,7 @@ end # testset "Fit and predict"
         ),
     )
     feature_sampler = FeatureSampler(pd, rng=copy(rng))
-    sigma_fixed = Dict("sigma" => 1.0)
+    sigma_fixed = Dict("sigma" => 30.9)
     sff = ScalarFourierFeature(
         n_features,
         feature_sampler,
