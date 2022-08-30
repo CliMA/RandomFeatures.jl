@@ -29,6 +29,7 @@ seed = 2023
         
         n_features = 100
         sigma_fixed = Dict("sigma" => 10.0)
+
         sff = ScalarFourierFeature(
             n_features,
             feature_sampler,
@@ -84,14 +85,18 @@ seed = 2023
         # looks like a 4th order polynomial near 0, then is damped to 0 toward +/- inf
         ftest(x::AbstractVecOrMat) = exp.(-0.5*x.^2) .* (x.^4 - x.^3 - x.^2 + x .- 1)
         
-        exp_range = [1,4,16]
-        n_data_exp = 4*exp_range
-        n_features_exp = 10*exp_range.^2
+        exp_range = [1,2,4]
+        n_data_exp = 8*exp_range
+
         
         L2err = zeros(length(exp_range),3)
         weightedL2err= zeros(length(exp_range),3)
         
-        for (exp_idx,n_data,n_features) in zip(1:length(exp_range),n_data_exp,n_features_exp)
+        # values with 1/var learning in 1d_to_1d_regression
+        σ_c_vec =[0.93 ,3.06 , 2.45]
+        σ_c_snf_vec =[0.97, 4.18, 3.57]
+        σ_c_ssf_vec =[1.65, 4.62, 5.41]
+        for (exp_idx,n_data, σ_c, σ_c_snf, σ_c_ssf) in zip(1:length(exp_range),n_data_exp,σ_c_vec, σ_c_snf_vec,σ_c_ssf_vec)
 
             rng=copy(rng_base)
             #problem formulation
@@ -116,12 +121,13 @@ seed = 2023
             # NB we optimize hyperparameter values (σ_c,"sigma") in examples/Learn_hyperparameters/1d_to_1d_regression.jl
             # Such values may change with different ftest and different noise_sd
             
+            sigma_fixed = Dict("sigma" => 1.0)
+            n_features = 80
+            
             μ_c = 0.0
-            σ_c = exp(0.8)
             pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
             feature_sampler = FeatureSampler(pd, rng=copy(rng))
 
-            sigma_fixed = Dict("sigma" => exp(1.05))
             sff = ScalarFourierFeature(
                 n_features,
                 feature_sampler,
@@ -129,26 +135,22 @@ seed = 2023
             )
             
             μ_c = 0.0
-            σ_c = exp(1.55)
-            pd_snf = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
+            pd_snf = constrained_gaussian("xi", μ_c, σ_c_snf, -Inf, Inf)
             feature_sampler_snf = FeatureSampler(pd_snf, rng=copy(rng))
-            sigma_fixed_snf = Dict("sigma" => exp(1.23))
             snf = ScalarNeuronFeature(
                 n_features,
                 feature_sampler_snf,
-                hyper_fixed =  sigma_fixed_snf,
+                hyper_fixed =  sigma_fixed,
             )
             
             μ_c = 0.0
-            σ_c = exp(1.14)
-            pd_ssf = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
+            pd_ssf = constrained_gaussian("xi", μ_c, σ_c_ssf, -Inf, Inf)
             feature_sampler_ssf = FeatureSampler(pd_ssf, rng=copy(rng))
-            sigma_fixed_ssf = Dict("sigma" => exp(2.03))
             ssf = ScalarFeature(
                 n_features,
                 feature_sampler_ssf,
                 Sigmoid(),
-                hyper_fixed =  sigma_fixed_ssf,
+                hyper_fixed =  sigma_fixed,
             )
             #first case without batches
             lambda = noise_sd^2
@@ -249,7 +251,7 @@ end # testset "Fit and predict"
     # specify features
     # note the σ_c and sigma values come from `examples/Learn_hyperparameters/nd_to_1d_regression.jl`
     μ_c = 0.0
-    σ_c = 53.1
+    σ_c = 15.0
     pd = ParameterDistribution(
         Dict(
             "distribution" => VectorOfParameterized(repeat([Normal(μ_c,σ_c)],input_dim)),
@@ -258,7 +260,7 @@ end # testset "Fit and predict"
         ),
     )
     feature_sampler = FeatureSampler(pd, rng=copy(rng))
-    sigma_fixed = Dict("sigma" => 30.9)
+    sigma_fixed = Dict("sigma" => 1.0)
     sff = ScalarFourierFeature(
         n_features,
         feature_sampler,
