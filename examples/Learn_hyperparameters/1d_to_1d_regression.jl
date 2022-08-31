@@ -70,13 +70,13 @@ function calculate_cost(
     rng::AbstractRNG,
     l::Real,
     s::Real,
-    regularizer::Real,
+    noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer,
     n_perm::Int,
 )
-    
+    regularizer = noise_sd^2
     n_train = Int(floor(0.8*length(get_inputs(io_pairs)))) # 80:20 train test
     n_test = length(get_inputs(io_pairs)) - n_train
     costs = zeros(n_perm)
@@ -104,7 +104,7 @@ function calculate_cost(
         #squared errors
         residual = zeros(1)
         for (ib,ob) in zip(batch_inputs, batch_outputs)
-            residual[1] += 100 * sum((ob - predictive_mean(rfm, fitted_features, DataContainer(ib))).^2)
+            residual[1] += 1/noise_sd^2 * sum((ob - predictive_mean(rfm, fitted_features, DataContainer(ib))).^2)
         end
         test_cost = 0.5 * residual[1]  
         rkhs_cost = 0.5 * regularizer / n_features * dot(coeffs,coeffs)
@@ -120,7 +120,7 @@ function estimate_cost_covariance(
     rng::AbstractRNG,
     l::Real,
     s::Real,
-    regularizer::Real,
+    noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer, 
@@ -133,7 +133,7 @@ function estimate_cost_covariance(
             rng,
             l,
             s,
-            regularizer,
+            noise_sd,
             n_features,
             batch_sizes,
             io_pairs,
@@ -149,7 +149,7 @@ function calculate_ensemble_cost(
     rng::AbstractRNG,
     lvec::AbstractVector,
     svec::AbstractVector,
-    regularizer::Real,
+    noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer;
@@ -162,7 +162,7 @@ function calculate_ensemble_cost(
             rng,
             l,
             s,
-            regularizer,
+            noise_sd,
             n_features,
             batch_sizes,
             io_pairs,
@@ -183,7 +183,6 @@ ftest(x::AbstractVecOrMat) = exp.(-0.5*x.^2) .* (x.^4 - x.^3 - x.^2 + x .- 1)
 
 n_data = 8*4
 noise_sd = 0.1
-regularizer = noise_sd^2
 
 x = rand(rng, Uniform(-3,3), n_data)
 noise = rand(rng, Normal(0,noise_sd), n_data)
@@ -202,8 +201,8 @@ ytest = ftest(get_data(xtest))
 
 ## Define Hyperpriors for EKP
 
-μ_l = 5.0
-σ_l = 5.0
+μ_l = 10.0
+σ_l = 10.0
 prior_lengthscale = constrained_gaussian("lengthscale", μ_l, σ_l, 0.0, Inf)
 
 μ_s = 1.0
@@ -222,7 +221,7 @@ n_perm = 16
     rng,
     μ_l, # take mean values
     μ_s, # take mean values
-    regularizer,
+    noise_sd,
     n_features,
     batch_sizes,
     io_pairs,
@@ -248,7 +247,7 @@ for i in 1:N_iter
         rng,
         lvec,
         repeat([μ_s],length(lvec)),#svec,
-        regularizer,
+        noise_sd,
         n_features,
         batch_sizes,
         io_pairs,

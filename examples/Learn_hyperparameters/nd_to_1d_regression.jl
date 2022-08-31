@@ -28,7 +28,7 @@ rng = StableRNG(seed)
 ## Functions of use
 function RFM_from_hyperparameters(
     rng::AbstractRNG,
-    l::Real,
+    l::Union{Real,AbstractVecOrMat},
     s::Real,
     regularizer::Real,
     n_features::Int,
@@ -36,11 +36,21 @@ function RFM_from_hyperparameters(
 )
 
     μ_c = 0.0
-    σ_c = l
-    μ_c = 0.0
+    if isa(l,Real)
+        σ_c = fill(l,input_dim)
+    elseif isa(l,AbstractVector)
+        if length(l) == 1
+            σ_c = fill(l[1],input_dim)
+        else
+            σ_c = l
+        end
+    else isa(l,AbstractMatrix)
+        σ_c = l[:,1]
+    end
+
     pd = ParameterDistribution(
         Dict(
-            "distribution" => VectorOfParameterized(repeat([Normal(μ_c,σ_c)],input_dim)),
+            "distribution" => VectorOfParameterized(map(sd -> Normal(μ_c,sd),σ_c)),
             "constraint" => repeat([no_constraint()],input_dim),
             "name" => "xi",
         ),
@@ -59,15 +69,15 @@ end
 
 function calculate_cost(
     rng::AbstractRNG,
-    l::Real,
+    l::Union{Real,AbstractVecOrMat},
     s::Real,
-    regularizer::Real,
+    noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer,
     n_perm::Int,
 )
-
+    regularizer = noise_sd^2
     n_train = Int(floor(0.8*size(get_inputs(io_pairs),2))) # 80:20 train test
     n_test = size(get_inputs(io_pairs),2) - n_train
     costs = zeros(n_perm)
@@ -95,7 +105,7 @@ function calculate_cost(
 
         residual = zeros(1)
         for (ib,ob) in zip(batch_inputs, batch_outputs)
-            residual[1] +=  100^2 * sum((ob - predictive_mean(rfm, fitted_features, DataContainer(ib))).^2)
+            residual[1] += 1/noise_sd^2* sum((ob - predictive_mean(rfm, fitted_features, DataContainer(ib))).^2)
         end
         test_cost = 0.5 * residual[1]
 
@@ -109,9 +119,9 @@ end
 
 function estimate_cost_covariance(
     rng::AbstractRNG,
-    l::Real,
+    l::Union{Real,AbstractVecOrMat},
     s::Real,
-    regularizer::Real,
+    noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer, 
@@ -124,7 +134,7 @@ function estimate_cost_covariance(
             rng,
             l,
             s,
-            regularizer,
+            noise_sd,
             n_features,
             batch_sizes,
             io_pairs,
@@ -138,22 +148,28 @@ end
 
 function calculate_ensemble_cost(
     rng::AbstractRNG,
-    lvec::AbstractVector,
-    svec::AbstractVector,
-    regularizer::Real,
+    lvecormat::AbstractVecOrMat,
+    s::Real,
+    noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer;
     n_perm::Int=4
 )
-    N_ens = length(lvec)
+    if isa(lvecormat,AbstractVector)
+        lmat = reshape(lvecormat,1,:)
+    else
+        lmat = lvecormat
+    end
+    N_ens = size(lmat,2)
     costs = zeros(N_ens)
-    for (i,l,s) in zip(collect(1:N_ens),lvec,svec)
+    for i in collect(1:N_ens)
+        l = lmat[:,i]
         costs[i] = calculate_cost(
             rng,
             l,
             s,
-            regularizer,
+            noise_sd,
             n_features,
             batch_sizes,
             io_pairs,
@@ -175,7 +191,6 @@ ftest_nd_to_1d(x::AbstractMatrix) = mapslices(column -> cos(2*pi*norm(column)), 
 n_data = 500
 x = rand(rng, Uniform(-3,3), (input_dim, n_data))
 noise_sd = 0.01
-regularizer = noise_sd^2
 noise = rand(rng, Normal(0,noise_sd), (1,n_data))
 
 y = ftest_nd_to_1d(x) + noise
@@ -183,13 +198,24 @@ io_pairs = PairedDataContainer(x, y)
 
 ## Define Hyperpriors for EKP
 
-μ_l = 1.0
-σ_l = 10.0
-prior_lengthscale = constrained_gaussian("lengthscale", μ_l, σ_l, 0.0, Inf)
+#μ_l = 10.0
+#σ_l = 10.0
+#unif in all directions
+#prior_lengthscale = constrained_gaussian("lengthscale", μ_l, σ_l, 0.0, Inf)
 
-μ_s = 1.0
-#σ_s = 5.0
-#prior_scaling = constrained_gaussian("scaling", μ_l, σ_l, 0.0, Inf)
+#non-unif
+comp_μ_l = log(10)
+comp_σ_l = 1
+prior_lengthscale = ParameterDistribution(
+    Dict(
+        "distribution" => VectorOfParameterized(repeat([Normal(comp_μ_l,comp_σ_l)],input_dim)),
+        "constraint" => repeat([bounded_below(0.0)],input_dim),
+        "name" => "lengthscale",
+    )
+)
+
+
+μ_s = 1.0               
 
 #priors = combine_distributions([prior_lengthscale, prior_scaling])
 priors = prior_lengthscale
@@ -201,9 +227,9 @@ n_features = 1000
 n_perm = 4
 Γ = estimate_cost_covariance(
     rng,
-    μ_l, # take mean values
+    exp(comp_μ_l), # take mean values
     μ_s, # take mean values
-    regularizer,
+    noise_sd,
     n_features,
     batch_sizes,
     io_pairs,
@@ -213,7 +239,7 @@ n_perm = 4
 Γ = reshape([Γ], 1, 1) # 1x1 matrix
 println("noise in observations: ", Γ)
 # Create EKI
-N_ens = 30
+N_ens = 50
 N_iter = 20
 
 initial_params = construct_initial_ensemble(priors, N_ens; rng_seed = ekp_seed)
@@ -223,14 +249,12 @@ err = zeros(N_iter)
 for i in 1:N_iter
 
     #get parameters:
-    constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj))
-    lvec = constrained_u[1,:] 
-#    svec = constrained_u[2,:]
+    lvec = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj))
     g_ens = calculate_ensemble_cost(
         rng,
         lvec,
-        repeat([μ_s],length(lvec)),#svec,
-        regularizer,
+        μ_s,
+        noise_sd,
         n_features,
         batch_sizes,
         io_pairs,
