@@ -2,9 +2,15 @@ module Methods
 
 import StatsBase: sample, fit, predict
 
-using LinearAlgebra, RandomFeatures.Features, RandomFeatures.Utilities, EnsembleKalmanProcesses.DataContainers
+using
+    LinearAlgebra,
+    DocStringExtensions,
+    RandomFeatures.Features,
+    RandomFeatures.Utilities,
+    EnsembleKalmanProcesses.DataContainers
 
-export RandomFeatureMethod,
+export
+    RandomFeatureMethod,
     Fit,
     get_random_feature,
     get_batch_sizes,
@@ -21,16 +27,35 @@ export RandomFeatureMethod,
     predict_prior_mean,
     predict_prior_cov
 
+"""
+$(TYPEDEF)
+
+Holds configuration for the random feature fit
+
+$(TYPEDFIELDS)
+"""
 struct RandomFeatureMethod
-    rf::RandomFeature
-    batch_sizes::Dict #keys "train", "test" , "feature"
+    "The random feature object"
+    random_feature::RandomFeature
+    "A dictionary specifying the batch sizes. Must contain \"train\", \"test\", and \"feature\" keys"
+    batch_sizes::Dict
+    "A non-negative, additive regularization parameter used during the fit method in the linear solve"
     regularization::Real
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Basic constructor for a `RandomFeatureMethod`. 
+"""
 function RandomFeatureMethod(
-    rf::RandomFeature;
-    regularization::Real = 1e12 * eps(),
-    batch_sizes::Dict = Dict{AbstractString, Int}("train" => 0, "test" => 0, "feature" => 0),
+    random_feature::RandomFeature;
+    regularization::Real=1e12*eps(),
+    batch_sizes::Dict=Dict{AbstractString,Int}(
+        "train" => 0,
+        "test" => 0,
+        "feature" => 0,
+    ),
 )
 
     if !all([key ∈ keys(batch_sizes) for key in ["train", "test", "feature"]])
@@ -44,26 +69,83 @@ function RandomFeatureMethod(
         lambda = regularization
     else
         lambda = regularization
-    end
-
-    return RandomFeatureMethod(rf, batch_sizes, lambda)
+    end    
+            
+    return RandomFeatureMethod(random_feature, batch_sizes, lambda)
 end
 
-get_random_feature(rfm::RandomFeatureMethod) = rfm.rf
-get_batch_sizes(rfm::RandomFeatureMethod) = rfm.batch_sizes
-get_regularization(rfm::RandomFeatureMethod) = rfm.regularization
-sample(rfm::RandomFeatureMethod) = sample(rfm.rf)
+"""
+$(TYPEDSIGNATURES)
 
+gets the `random_feature` field
+"""
+get_random_feature(rfm::RandomFeatureMethod) = rfm.random_feature
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the `batch_sizes` field
+"""
+get_batch_sizes(rfm::RandomFeatureMethod) = rfm.batch_sizes
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the `regularization` field
+"""
+get_regularization(rfm::RandomFeatureMethod) = rfm.regularization
+
+
+"""
+$(TYPEDSIGNATURES)
+
+samples the random_feature field
+"""
+sample(rfm::RandomFeatureMethod) = sample(get_random_feature(rfm))
+
+
+"""
+$(TYPEDSIGNATURES)
+
+get the specified batch size from `batch_sizes` field
+"""
 get_batch_size(rfm::RandomFeatureMethod, key::AbstractString) = get_batch_sizes(rfm)[key]
 
+
+"""
+$(TYPEDEF)
+
+Holds the coefficients and matrix decomposition that describe a set of fitted random features.
+
+$(TYPEDFIELDS)
+"""
 struct Fit
+    "The `LinearAlgreba` matrix decomposition of `(1 / m) * Feature^T * Feature + regularization * I`"
     feature_factors::Decomposition
+    "Coefficients of the fit to data"
     coeffs::AbstractVector
 end
 
-get_feature_factors(f::Fit) = f.feature_factors
-get_coeffs(f::Fit) = f.coeffs
+"""
+$(TYPEDSIGNATURES)
 
+gets the `feature_factors` field
+"""
+get_feature_factors(f::Fit) = f.feature_factors
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the `coeffs` field
+"""
+get_coeffs(f::Fit) = f.coeffs    
+
+"""
+$(TYPEDSIGNATURES)
+
+Fits a `RandomFeatureMethod` to input-output data, optionally provide a preferred `LinearAlgebra` matrix decomposition.
+Returns a `Fit` object.
+"""
 function fit(
     rfm::RandomFeatureMethod,
     input_output_pairs::PairedDataContainer;
@@ -106,6 +188,12 @@ function fit(
     return Fit(feature_factors, coeffs[:])
 end
 
+
+"""
+$(TYPEDSIGNATURES)
+
+Makes a prediction of mean and (co)variance of fitted features on new input data
+"""
 function predict(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer)
     pred_mean = predictive_mean(rfm, fit, new_inputs)
     pred_cov, _ = predictive_cov(rfm, fit, new_inputs)
@@ -113,10 +201,20 @@ function predict(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer)
 end
 
 
+"""
+$(TYPEDSIGNATURES)
+
+Makes a prediction of mean and (co)variance with unfitted features on new input data
+"""
 function predict_prior(rfm::RandomFeatureMethod, new_inputs::DataContainer)
     return predict_prior_mean(rfm, new_inputs), predict_prior_cov(rfm, new_inputs)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Makes a prediction of mean with unfitted features on new input data
+"""
 function predict_prior_mean(rfm::RandomFeatureMethod, new_inputs::DataContainer)
     rf = get_random_feature(rfm)
     n_features = get_n_features(rf)
@@ -124,6 +222,11 @@ function predict_prior_mean(rfm::RandomFeatureMethod, new_inputs::DataContainer)
     return predictive_mean(rfm, coeffs, new_inputs)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Makes a prediction of (co)variance with unfitted features on new input data
+"""
 function predict_prior_cov(rfm::RandomFeatureMethod, new_inputs::DataContainer)
     inputs = get_data(new_inputs)
 
@@ -148,8 +251,12 @@ function predict_prior_cov(rfm::RandomFeatureMethod, new_inputs::DataContainer)
     return cov_outputs
 end
 
-predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer) =
-    predictive_mean(rfm, get_coeffs(fit), new_inputs)
+"""
+$(TYPEDSIGNATURES)
+
+Makes a prediction of mean of fitted features on new input data
+"""
+predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer) = predictive_mean(rfm, get_coeffs(fit), new_inputs)
 
 function predictive_mean(rfm::RandomFeatureMethod, coeffs::AbstractVector, new_inputs::DataContainer)
 
@@ -178,6 +285,11 @@ function predictive_mean(rfm::RandomFeatureMethod, coeffs::AbstractVector, new_i
     return outputs
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Makes a prediction of (co)variance of fitted features on new input data
+"""
 function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer)
     # unlike in mean case, we must perform a linear solve for coefficients at every test point.
     # thus we return both the covariance and the input-dep coefficients
@@ -216,6 +328,7 @@ function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCont
 
     return cov_outputs, coeff_outputs
 end
+
 
 function posterior_cov(rfm::RandomFeatureMethod, u_input, v_input)
 

@@ -2,7 +2,11 @@ module Samplers
 
 import StatsBase: sample
 
-using Random, Distributions, EnsembleKalmanProcesses.ParameterDistributions
+using
+    Random,
+    Distributions,
+    DocStringExtensions,
+    EnsembleKalmanProcesses.ParameterDistributions
 
 export Sampler,
     FeatureSampler,
@@ -13,13 +17,28 @@ export Sampler,
     get_rng,
     sample
 
+"""
+$(TYPEDEF)
+
+Wraps the parameter distributions used to sample random features
+
+$(TYPEDFIELDS)
+"""
 struct Sampler
+    "A probability distribution, possibly with constraints"
     parameter_distribution::ParameterDistribution
-    optimizable_parameters::Union{AbstractVector, Nothing}
-    uniform_shift_bounds::Union{AbstractVector, Nothing}
+    optimizable_parameters::Union{AbstractVector,Nothing}
+    "Either `nothing` , or `[lower bound, upper bound]`, which defines a uniform distribution used as a random shift"
+    uniform_shift_bounds::Union{AbstractVector,Nothing}
+    "A random number generator state"
     rng::AbstractRNG
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+basic constructor for a `Sampler` 
+"""
 function FeatureSampler(
     parameter_distribution::ParameterDistribution;
     optimizable_parameters::Union{AbstractVector, Nothing} = nothing,
@@ -48,21 +67,47 @@ function FeatureSampler(
 
 end
 
-function HyperSampler(parameter_distribution::ParameterDistribution; rng::AbstractRNG = Random.GLOBAL_RNG)
-    return Sampler(parameter_distribution, nothing, nothing, rng)
 
+function HyperSampler(
+    parameter_distribution::ParameterDistribution;
+    rng::AbstractRNG = Random.GLOBAL_RNG,
+)
+    return Sampler(
+        parameter_distribution,
+        nothing,
+        nothing,
+        rng,
+    )
+    
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+gets the `parameter_distribution` field 
+"""
 get_parameter_distribution(s::Sampler) = s.parameter_distribution
 get_optimizable_parameters(s::Sampler) = s.optimizable_parameters
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the `uniform_shift_bounds` field 
+"""
 get_uniform_shift_bounds(s::Sampler) = s.uniform_shift_bounds
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the `rng` field
+"""
 get_rng(s::Sampler) = s.rng
 
-# methods - calls to ParameterDistribution methods
-#=
-sample(rng::AbstractRNG, s::Sampler, n_draws::Int) = sample(rng, s.parameter_distribution, n_draws)
-=#
+"""
+$(TYPEDSIGNATURES)
 
+samples the distribution within `s`, `n_draws` times using a random number generator `rng`. Can be called without `rng` (defaults to `s.rng`) or `n_draws` (defaults to `1`)
+"""
 function sample(rng::AbstractRNG, s::Sampler, n_draws::Int)
     pd = get_parameter_distribution(s)
     samp = sample(rng, pd, n_draws)
@@ -78,15 +123,10 @@ function sample(rng::AbstractRNG, s::Sampler, n_draws::Int)
     ])
 end
 
-
 sample(s::Sampler, n_draws::Int) = sample(s.rng, s, n_draws)
 sample(rng::AbstractRNG, s::Sampler) = sample(rng, s, 1)
 sample(s::Sampler) = sample(s.rng, s, 1)
 
-# function set_optimized_parameters(s::Sampler, optimized_parameters::NamedTuple) 
-#     
-#     #setting replacing distribution parameters
-# end
 
 
 end # module
