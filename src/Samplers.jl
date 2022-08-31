@@ -2,13 +2,9 @@ module Samplers
 
 import StatsBase: sample
 
-using
-    Random,
-    Distributions,
-    EnsembleKalmanProcesses.ParameterDistributions
+using Random, Distributions, EnsembleKalmanProcesses.ParameterDistributions
 
-export
-    Sampler,
+export Sampler,
     FeatureSampler,
     HyperSampler,
     get_parameter_distribution,
@@ -19,55 +15,42 @@ export
 
 struct Sampler
     parameter_distribution::ParameterDistribution
-    optimizable_parameters::Union{AbstractVector,Nothing}
-    uniform_shift_bounds::Union{AbstractVector,Nothing}
+    optimizable_parameters::Union{AbstractVector, Nothing}
+    uniform_shift_bounds::Union{AbstractVector, Nothing}
     rng::AbstractRNG
 end
 
 function FeatureSampler(
     parameter_distribution::ParameterDistribution;
-    optimizable_parameters::Union{AbstractVector,Nothing}=nothing,
-    uniform_shift_bounds::Union{AbstractVector,Nothing}=[0,2*pi],
+    optimizable_parameters::Union{AbstractVector, Nothing} = nothing,
+    uniform_shift_bounds::Union{AbstractVector, Nothing} = [0, 2 * pi],
     rng::AbstractRNG = Random.GLOBAL_RNG,
 )
-    
+
     # adds a uniform distribution to the parameter distribution
-    if isa(uniform_shift_bounds,AbstractVector)
+    if isa(uniform_shift_bounds, AbstractVector)
         if length(uniform_shift_bounds) == 2
             unif_pd = ParameterDistribution(
                 Dict(
-                    "distribution" => Parameterized(Uniform(uniform_shift_bounds[1],uniform_shift_bounds[2])),
+                    "distribution" => Parameterized(Uniform(uniform_shift_bounds[1], uniform_shift_bounds[2])),
                     "constraint" => no_constraint(),
                     "name" => "uniform",
-                )
+                ),
             )
             pd = combine_distributions([parameter_distribution, unif_pd])
         end
     else
         pd = parameter_distribution
-        uniform_shift_bounds=nothing
+        uniform_shift_bounds = nothing
     end
-    
-    return Sampler(
-        pd,
-        optimizable_parameters,
-        uniform_shift_bounds,
-        rng,
-    )
-    
+
+    return Sampler(pd, optimizable_parameters, uniform_shift_bounds, rng)
+
 end
 
-function HyperSampler(
-    parameter_distribution::ParameterDistribution;
-    rng::AbstractRNG = Random.GLOBAL_RNG,
-)
-    return Sampler(
-        parameter_distribution,
-        nothing,
-        nothing,
-        rng,
-    )
-    
+function HyperSampler(parameter_distribution::ParameterDistribution; rng::AbstractRNG = Random.GLOBAL_RNG)
+    return Sampler(parameter_distribution, nothing, nothing, rng)
+
 end
 
 get_parameter_distribution(s::Sampler) = s.parameter_distribution
@@ -87,9 +70,9 @@ function sample(rng::AbstractRNG, s::Sampler, n_draws::Int)
     s_names = get_name(pd)
     s_slices = batch(pd) # e.g., [1, 2:3, 4:9]
     flat_constraints = get_all_constraints(pd)
-    s_samples = [Samples(samp[slice,:]) for slice in s_slices]
+    s_samples = [Samples(samp[slice, :]) for slice in s_slices]
     s_constraints = [flat_constraints[slice] for slice in s_slices]
-  
+
     return combine_distributions([
         ParameterDistribution(ss, sc, sn) for (ss, sc, sn) in zip(s_samples, s_constraints, s_names)
     ])
