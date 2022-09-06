@@ -26,12 +26,7 @@ end
         end
     end
 
-    for submodule in [
-        "Utilities",
-        "Samplers",
-        "Features",
-        "Methods",
-    ]
+    for submodule in ["Utilities", "Samplers", "Features", "Methods"]
         if all_tests || has_submodule(submodule) || "RandomFeatures" in ARGS
             include_test(submodule)
         end

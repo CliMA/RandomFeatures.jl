@@ -1,9 +1,6 @@
 module RandomFeatures
 
-using
-    Statistics,
-    LinearAlgebra,
-    DocStringExtensions
+using Statistics, LinearAlgebra, DocStringExtensions
 
 #auxiliary modules
 include("Utilities.jl") # some additional tools

@@ -2,13 +2,7 @@ module Utilities
 
 using LinearAlgebra
 
-export
-    batch_generator,
-    Decomposition,
-    get_decomposition_is_inverse,
-    get_decomposition,
-    get_full_matrix,
-    linear_solve
+export batch_generator, Decomposition, get_decomposition_is_inverse, get_decomposition, get_full_matrix, linear_solve
 
 """
     function batch_generator(array::AbstractArray,batch_size::Int;dims::Int=1)
@@ -16,33 +10,27 @@ export
 returns a vector of batched sub-array views of size `batch_size` along dimension `dims`.
 NOTE: it creates views not copies. Modifying a batch will modify the original!
 
-"""  
-function batch_generator(
-    array::AbstractArray,
-    batch_size::Int;
-    dims::Int=1
-)
-    if batch_size == 0 
+"""
+function batch_generator(array::AbstractArray, batch_size::Int; dims::Int = 1)
+    if batch_size == 0
         return [array]
     end
-    
-    n_batches = Int(ceil(size(array,dims)/batch_size))
+
+    n_batches = Int(ceil(size(array, dims) / batch_size))
     batch_idx = [
-        i < n_batches ?
-        collect((i-1)*batch_size+1:i*batch_size) :
-        collect((i-1)*batch_size+1:size(array,dims))
-        for i in 1:n_batches
+        i < n_batches ? collect(((i - 1) * batch_size + 1):(i * batch_size)) :
+        collect(((i - 1) * batch_size + 1):size(array, dims)) for i in 1:n_batches
     ]
-    
+
     return [selectdim(array, dims, b) for b in batch_idx]
 end
-    
+
 
 # Decomposition/linear solves for feature matrices
 
 struct Decomposition
     full_matrix::AbstractMatrix
-    decomposition::Union{AbstractMatrix,Factorization}
+    decomposition::Union{AbstractMatrix, Factorization}
     decomposition_is_inverse::Bool
 end
 
@@ -51,10 +39,16 @@ function Decomposition(mat::AbstractMatrix, method::AbstractString)
         decomposition = pinv(mat)
         decomposition_is_inverse = true
     else
-        if !isdefined(LinearAlgebra,Symbol(method))
-            throw(ArgumentError("factorization method "*string(method)*" not found in LinearAlgebra, please select one of the existing options"))
+        if !isdefined(LinearAlgebra, Symbol(method))
+            throw(
+                ArgumentError(
+                    "factorization method " *
+                    string(method) *
+                    " not found in LinearAlgebra, please select one of the existing options",
+                ),
+            )
         else
-            f = getfield(LinearAlgebra,Symbol(method))
+            f = getfield(LinearAlgebra, Symbol(method))
             decomposition = f(mat)
             decomposition_is_inverse = false
         end
@@ -79,4 +73,4 @@ end
 
 
 
-end   
+end
