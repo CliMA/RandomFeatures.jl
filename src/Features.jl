@@ -5,10 +5,7 @@ include("ScalarFunctions.jl")
 import StatsBase: sample
 import RandomFeatures.Samplers: get_optimizable_parameters
 
-using
-    EnsembleKalmanProcesses.ParameterDistributions,
-    DocStringExtensions,
-    RandomFeatures.Samplers
+using EnsembleKalmanProcesses.ParameterDistributions, DocStringExtensions, RandomFeatures.Samplers
 
 export RandomFeature, ScalarFeature, ScalarFourierFeature, ScalarNeuronFeature
 
@@ -204,12 +201,12 @@ function build_features(
     # build: sigma * sqrt(2) * scalar_function(xi . input + b)
     samp = get_feature_sample(rf)
     xi = get_distribution(samp)["xi"] # dim_inputs x n_features
-    features = inputs * xi[:,batch_feature_idx] # n_samples x n_features
+    features = inputs * xi[:, batch_feature_idx] # n_samples x n_features
 
     is_uniform_shift = "uniform" ∈ get_name(samp)
     if is_uniform_shift
         uniform = get_distribution(samp)["uniform"] # 1 x n_features
-        features .+= uniform[:,batch_feature_idx]
+        features .+= uniform[:, batch_feature_idx]
     end
 
     sf = get_scalar_function(rf)

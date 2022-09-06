@@ -103,20 +103,12 @@ seed = 2023
 
             sff = ScalarFourierFeature(n_features, feature_sampler, hyper_fixed = sigma_fixed)
 
-            sff = ScalarFourierFeature(
-                n_features,
-                feature_sampler,
-                hyper_fixed =  sigma_fixed
-            )
-            
+            sff = ScalarFourierFeature(n_features, feature_sampler, hyper_fixed = sigma_fixed)
+
             pd_snf = constrained_gaussian("xi", μ_c, σ_c_snf, -Inf, Inf)
-            feature_sampler_snf = FeatureSampler(pd_snf, rng=copy(rng))
-            snf = ScalarNeuronFeature(
-                n_features,
-                feature_sampler_snf,
-                hyper_fixed =  sigma_fixed,
-            )
-            
+            feature_sampler_snf = FeatureSampler(pd_snf, rng = copy(rng))
+            snf = ScalarNeuronFeature(n_features, feature_sampler_snf, hyper_fixed = sigma_fixed)
+
             pd_ssf = constrained_gaussian("xi", μ_c, σ_c_ssf, -Inf, Inf)
             feature_sampler_ssf = FeatureSampler(pd_ssf, rng = copy(rng))
             ssf = ScalarFeature(n_features, feature_sampler_ssf, Sigmoid(), hyper_fixed = sigma_fixed)
@@ -209,88 +201,99 @@ seed = 2023
             ]
         end
 
-#these tests can be a bit brittle
-println(L2err)
-@test all([all(L2err[i,:] .< L2err[i-1,:]) for i=2:size(L2err,1)])
-#println(weightedL2err)
-#        @test all([all(weightedL2err[i,:] .< weightedL2err[i-1,:]) for i=2:size(weightedL2err,1)])
+        #these tests can be a bit brittle
+        println(L2err)
+        @test all([all(L2err[i, :] .< L2err[i - 1, :]) for i in 2:size(L2err, 1)])
+        #println(weightedL2err)
+        #        @test all([all(weightedL2err[i,:] .< weightedL2err[i-1,:]) for i=2:size(weightedL2err,1)])
 
 
 
 
 
-end # testset "Fit and predict"
+    end # testset "Fit and predict"
 
-@testset "Fit and predict: N-D -> 1-D" begin    
+    @testset "Fit and predict: N-D -> 1-D" begin
 
-    rng = StableRNG(seed+1)
-    input_dim = 10
-    n_features = 1001
-    ftest_nd_to_1d(x::AbstractMatrix) = mapslices(column -> cos(2*pi*norm(column)), x, dims=1)
+        rng = StableRNG(seed + 1)
+        input_dim = 10
+        n_features = 1001
+        ftest_nd_to_1d(x::AbstractMatrix) = mapslices(column -> cos(2 * pi * norm(column)), x, dims = 1)
 
-    #problem formulation
-    n_data = 800
-    x = rand(rng, Uniform(-3,3), (input_dim, n_data))
-    noise_sd = 0.01
-    lambda = noise_sd^2
-    noise = rand(rng, Normal(0,noise_sd), (1,n_data))
-            
-    y = ftest_nd_to_1d(x) + noise
-    io_pairs = PairedDataContainer(x, y) 
+        #problem formulation
+        n_data = 800
+        x = rand(rng, Uniform(-3, 3), (input_dim, n_data))
+        noise_sd = 0.01
+        lambda = noise_sd^2
+        noise = rand(rng, Normal(0, noise_sd), (1, n_data))
 
-    n_test = 10000    
-    xtestvec = rand(rng, Uniform(-3,3), (input_dim, n_test))
+        y = ftest_nd_to_1d(x) + noise
+        io_pairs = PairedDataContainer(x, y)
 
-    xtest = DataContainer(xtestvec)
-    ytest = ftest_nd_to_1d(get_data(xtest))
+        n_test = 10000
+        xtestvec = rand(rng, Uniform(-3, 3), (input_dim, n_test))
 
-    
-    # specify features
-    # note the σ_c and sigma values come from `examples/Learn_hyperparameters/nd_to_1d_regression.jl`
-    μ_c = 0.0
+        xtest = DataContainer(xtestvec)
+        ytest = ftest_nd_to_1d(get_data(xtest))
 
-    σ_c = 15.0
-    pd = ParameterDistribution(
-        Dict(
-            "distribution" => VectorOfParameterized(repeat([Normal(μ_c,σ_c)],input_dim)),
-            "constraint" => repeat([no_constraint()],input_dim),
-            "name" => "xi",
-        ),
-    )
 
-    feature_sampler = FeatureSampler(pd, rng=copy(rng))
-    sigma_fixed = Dict("sigma" => 1.0)
-    sff = ScalarFourierFeature(
-        n_features,
-        feature_sampler,
-        hyper_fixed =  sigma_fixed
-    )
-    
-    #second case with batching
-    batch_sizes = Dict("train" => 100, "test" => 100, "feature" => 100)
-    
-    rfm_batch = RandomFeatureMethod(sff, batch_sizes=batch_sizes, regularization=lambda)
-    
-    fitted_batched_features = fit(rfm_batch, io_pairs)
-    # test prediction with different features
-    pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
+        # specify features
+        # note the σ_c and sigma values come from `examples/Learn_hyperparameters/nd_to_1d_regression.jl`
+        μ_c = 0.0
 
-    L2err = sqrt(sum((ytest - pred_mean).^2))
-    println("L2err: ", L2err)
+        σ_c = 15.0
+        pd = ParameterDistribution(
+            Dict(
+                "distribution" => VectorOfParameterized(repeat([Normal(μ_c, σ_c)], input_dim)),
+                "constraint" => repeat([no_constraint()], input_dim),
+                "name" => "xi",
+            ),
+        )
 
-    if TEST_PLOT_FLAG
-        #plot slice through one dimensions, others fixed to 0
-        xrange = collect(-3:0.01:3)
-        xslice = zeros(input_dim,length(xrange))
-        xslice[1,:] = xrange
+        feature_sampler = FeatureSampler(pd, rng = copy(rng))
+        sigma_fixed = Dict("sigma" => 1.0)
+        sff = ScalarFourierFeature(n_features, feature_sampler, hyper_fixed = sigma_fixed)
 
-        yslice = ftest_nd_to_1d(xslice)
-        
-        pred_mean_slice, pred_cov_slice = predict(rfm_batch, fitted_batched_features, DataContainer(xslice))
-        plt = plot(reshape(xslice[1,:],:,1), yslice', show=false, color="black", linewidth=5, size = (600,600), legend=:topleft, label="Target" )
-        plot!(reshape(xslice[1,:],:,1), pred_mean_slice', ribbon = [2*sqrt.(pred_cov_slice); 2*sqrt.(pred_cov_slice)]', label="Fourier", color="blue")
-        savefig(plt, joinpath(@__DIR__,"Fit_and_predict_ND.pdf"))
-    end
+        #second case with batching
+        batch_sizes = Dict("train" => 100, "test" => 100, "feature" => 100)
+
+        rfm_batch = RandomFeatureMethod(sff, batch_sizes = batch_sizes, regularization = lambda)
+
+        fitted_batched_features = fit(rfm_batch, io_pairs)
+        # test prediction with different features
+        pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
+
+        L2err = sqrt(sum((ytest - pred_mean) .^ 2))
+        println("L2err: ", L2err)
+
+        if TEST_PLOT_FLAG
+            #plot slice through one dimensions, others fixed to 0
+            xrange = collect(-3:0.01:3)
+            xslice = zeros(input_dim, length(xrange))
+            xslice[1, :] = xrange
+
+            yslice = ftest_nd_to_1d(xslice)
+
+            pred_mean_slice, pred_cov_slice = predict(rfm_batch, fitted_batched_features, DataContainer(xslice))
+            plt = plot(
+                reshape(xslice[1, :], :, 1),
+                yslice',
+                show = false,
+                color = "black",
+                linewidth = 5,
+                size = (600, 600),
+                legend = :topleft,
+                label = "Target",
+            )
+            plot!(
+                reshape(xslice[1, :], :, 1),
+                pred_mean_slice',
+                ribbon = [2 * sqrt.(pred_cov_slice); 2 * sqrt.(pred_cov_slice)]',
+                label = "Fourier",
+                color = "blue",
+            )
+            savefig(plt, joinpath(@__DIR__, "Fit_and_predict_ND.pdf"))
+        end
 
 
 

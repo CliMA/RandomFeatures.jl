@@ -7,8 +7,7 @@ using DocStringExtensions
 import Base.@kwdef
 
 
-export
-    ScalarFunction,
+export ScalarFunction,
     ScalarActivation,
     Cosine,
     Relu,
@@ -37,7 +36,7 @@ $(TYPEDSIGNATURES)
 
 apply the scalar function `sf` pointwise to vectors or matrices
 """
-apply_scalar_function(sf::ScalarFunction, r::AbstractVecOrMat) = apply_scalar_function.(Ref(sf),r) # Ref(sf) treats sf as a scalar for the broadcasting
+apply_scalar_function(sf::ScalarFunction, r::AbstractVecOrMat) = apply_scalar_function.(Ref(sf), r) # Ref(sf) treats sf as a scalar for the broadcasting
 
 """
 $(TYPEDEF)

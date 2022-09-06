@@ -2,11 +2,7 @@ module Samplers
 
 import StatsBase: sample
 
-using
-    Random,
-    Distributions,
-    DocStringExtensions,
-    EnsembleKalmanProcesses.ParameterDistributions
+using Random, Distributions, DocStringExtensions, EnsembleKalmanProcesses.ParameterDistributions
 
 export Sampler,
     FeatureSampler,
@@ -27,9 +23,9 @@ $(TYPEDFIELDS)
 struct Sampler
     "A probability distribution, possibly with constraints"
     parameter_distribution::ParameterDistribution
-    optimizable_parameters::Union{AbstractVector,Nothing}
+    optimizable_parameters::Union{AbstractVector, Nothing}
     "Either `nothing` , or `[lower bound, upper bound]`, which defines a uniform distribution used as a random shift"
-    uniform_shift_bounds::Union{AbstractVector,Nothing}
+    uniform_shift_bounds::Union{AbstractVector, Nothing}
     "A random number generator state"
     rng::AbstractRNG
 end
@@ -68,17 +64,9 @@ function FeatureSampler(
 end
 
 
-function HyperSampler(
-    parameter_distribution::ParameterDistribution;
-    rng::AbstractRNG = Random.GLOBAL_RNG,
-)
-    return Sampler(
-        parameter_distribution,
-        nothing,
-        nothing,
-        rng,
-    )
-    
+function HyperSampler(parameter_distribution::ParameterDistribution; rng::AbstractRNG = Random.GLOBAL_RNG)
+    return Sampler(parameter_distribution, nothing, nothing, rng)
+
 end
 
 """

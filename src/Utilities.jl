@@ -1,19 +1,9 @@
 module Utilities
 
-using
-    LinearAlgebra,
-    DocStringExtensions
+using LinearAlgebra, DocStringExtensions
 
-export
-    batch_generator,
-    Decomposition,
-    StoredInvType,
-    Factor,
-    PseInv,
-    get_decomposition,
-    get_full_matrix,
-    get_parametric_type,
-    linear_solve
+export batch_generator,
+    Decomposition, StoredInvType, Factor, PseInv, get_decomposition, get_full_matrix, get_parametric_type, linear_solve
 
 """
 $(TYPEDSIGNATURES)
@@ -67,8 +57,8 @@ $(TYPEDFIELDS)
 struct Decomposition{T}
     "The original matrix"
     full_matrix::AbstractMatrix
-    "The matrix decomposition, or pseudoinverse" 
-    decomposition::Union{AbstractMatrix,Factorization}
+    "The matrix decomposition, or pseudoinverse"
+    decomposition::Union{AbstractMatrix, Factorization}
 end
 
 function Decomposition(mat::AbstractMatrix, method::AbstractString)
@@ -121,12 +111,13 @@ $(TYPEDSIGNATURES)
 Solve the linear system based on `Decomposition` type
 """
 function linear_solve(d::Decomposition, rhs::AbstractVecOrMat, ::Type{Factor})
-    return get_decomposition(d) \ rhs 
+    return get_decomposition(d) \ rhs
 end
 function linear_solve(d::Decomposition, rhs::AbstractVecOrMat, ::Type{PseInv})
     return get_decomposition(d) * rhs
 end
 
-linear_solve(d::Decomposition, rhs::AbstractVecOrMat) = linear_solve(d::Decomposition, rhs::AbstractVecOrMat, get_parametric_type(d))  
+linear_solve(d::Decomposition, rhs::AbstractVecOrMat) =
+    linear_solve(d::Decomposition, rhs::AbstractVecOrMat, get_parametric_type(d))
 
 end

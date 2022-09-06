@@ -1,13 +1,8 @@
 # reference in tree version of RandomFeatures
 prepend!(LOAD_PATH, [joinpath(@__DIR__, "..")])
 
-using
-    Documenter,
-    RandomFeatures,
-    RandomFeatures.Samplers,
-    RandomFeatures.Features,
-    RandomFeatures.Methods,
-    RandomFeatures.Utilities
+using Documenter,
+    RandomFeatures, RandomFeatures.Samplers, RandomFeatures.Features, RandomFeatures.Methods, RandomFeatures.Utilities
 
 # Gotta set this environment variable when using the GR run-time on CI machines.
 # This happens as examples will use Plots.jl to make plots and movies.
@@ -18,16 +13,16 @@ api = [
     "Samplers" => "API/Samplers.md",
     "Features" => "API/Features.md",
     "Methods" => "API/Methods.md",
-    "Utilities" => "API/Utilities.md"
+    "Utilities" => "API/Utilities.md",
 ]
 
 pages = [
     "Home" => "index.md",
     "Installation instructions" => "installation_instructions.md",
     "Contributing" => "contributing.md",
-#    "Samplers" => "Samplers.md",
-#    "Features" => "Features.md",
-#    "Methods" => "Methods.md",
+    #    "Samplers" => "Samplers.md",
+    #    "Features" => "Features.md",
+    #    "Methods" => "Methods.md",
     "API" => api,
 ]
 
@@ -40,9 +35,7 @@ makedocs(
     authors = "CliMA Contributors",
     format = format,
     pages = pages,
-    modules = [
-        RandomFeatures,
-    ],
+    modules = [RandomFeatures],
     doctest = true,
     strict = true,
     clean = true,

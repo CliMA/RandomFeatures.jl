@@ -2,15 +2,10 @@ module Methods
 
 import StatsBase: sample, fit, predict
 
-using
-    LinearAlgebra,
-    DocStringExtensions,
-    RandomFeatures.Features,
-    RandomFeatures.Utilities,
-    EnsembleKalmanProcesses.DataContainers
+using LinearAlgebra,
+    DocStringExtensions, RandomFeatures.Features, RandomFeatures.Utilities, EnsembleKalmanProcesses.DataContainers
 
-export
-    RandomFeatureMethod,
+export RandomFeatureMethod,
     Fit,
     get_random_feature,
     get_batch_sizes,
@@ -50,12 +45,8 @@ Basic constructor for a `RandomFeatureMethod`.
 """
 function RandomFeatureMethod(
     random_feature::RandomFeature;
-    regularization::Real=1e12*eps(),
-    batch_sizes::Dict=Dict{AbstractString,Int}(
-        "train" => 0,
-        "test" => 0,
-        "feature" => 0,
-    ),
+    regularization::Real = 1e12 * eps(),
+    batch_sizes::Dict = Dict{AbstractString, Int}("train" => 0, "test" => 0, "feature" => 0),
 )
 
     if !all([key ∈ keys(batch_sizes) for key in ["train", "test", "feature"]])
@@ -69,8 +60,8 @@ function RandomFeatureMethod(
         lambda = regularization
     else
         lambda = regularization
-    end    
-            
+    end
+
     return RandomFeatureMethod(random_feature, batch_sizes, lambda)
 end
 
@@ -138,7 +129,7 @@ $(TYPEDSIGNATURES)
 
 gets the `coeffs` field
 """
-get_coeffs(f::Fit) = f.coeffs    
+get_coeffs(f::Fit) = f.coeffs
 
 """
 $(TYPEDSIGNATURES)
@@ -256,7 +247,8 @@ $(TYPEDSIGNATURES)
 
 Makes a prediction of mean of fitted features on new input data
 """
-predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer) = predictive_mean(rfm, get_coeffs(fit), new_inputs)
+predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer) =
+    predictive_mean(rfm, get_coeffs(fit), new_inputs)
 
 function predictive_mean(rfm::RandomFeatureMethod, coeffs::AbstractVector, new_inputs::DataContainer)
 
