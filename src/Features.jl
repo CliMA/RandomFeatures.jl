@@ -5,7 +5,7 @@ include("ScalarFunctions.jl")
 import StatsBase: sample
 import RandomFeatures.Samplers: get_optimizable_parameters
 
-using EnsembleKalmanProcesses.ParameterDistributions, RandomFeatures.Samplers
+using EnsembleKalmanProcesses.ParameterDistributions, DocStringExtensions, RandomFeatures.Samplers
 
 export RandomFeature, ScalarFeature, ScalarFourierFeature, ScalarNeuronFeature
 
@@ -13,14 +13,19 @@ export sample,
     get_optimizable_parameters,
     get_scalar_function,
     get_feature_sampler,
-    get_n_features,
     get_feature_sample,
+    get_n_features,
     get_hyper_sampler,
     get_hyper_fixed,
     build_features
 
 abstract type RandomFeature end
 
+"""
+$(TYPEDSIGNATURES)
+
+samples the random feature distribution 
+"""
 function sample(rf::RandomFeature)
     sampler = get_feature_sampler(rf)
     m = get_n_features(rf)
@@ -28,19 +33,32 @@ function sample(rf::RandomFeature)
 end
 
 
-# function set_optimized_parameters(rf::RandomFeature, optimized_parameters)
-# 
-# end
+"""
+$(TYPEDEF)
+
+Contains information to build and sample RandomFeatures mapping from N-D -> 1-D
+
+$(TYPEDFIELDS)
+"""
 struct ScalarFeature <: RandomFeature
+    "Number of features"
     n_features::Int
+    "Sampler of the feature distribution"
     feature_sampler::Sampler
+    "ScalarFunction mapping R -> R"
     scalar_function::ScalarFunction
+    "Current `Sample` from sampler"
     feature_sample::ParameterDistribution
     hyper_sampler::Union{Sampler, Nothing}
     hyper_fixed::Union{Dict, Nothing}
 end
 
 # common constructors
+"""
+$(TYPEDSIGNATURES)
+
+basic constructor for a `ScalarFeature'
+"""
 function ScalarFeature(
     n_features::Int,
     feature_sampler::Sampler,
@@ -103,6 +121,11 @@ function ScalarFeature(
 end
 
 #these call the above constructor
+"""
+$(TYPEDSIGNATURES)
+
+Constructor for a `Sampler` with cosine features
+"""
 function ScalarFourierFeature(
     n_features::Int,
     sampler::Sampler;
@@ -112,6 +135,11 @@ function ScalarFourierFeature(
     return ScalarFeature(n_features, sampler, Cosine(), hyper_sampler = hyper_sampler, hyper_fixed = hyper_fixed)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Constructor for a `Sampler` with activation-function features
+"""
 function ScalarNeuronFeature(
     n_features::Int,
     sampler::Sampler;
@@ -123,10 +151,34 @@ function ScalarNeuronFeature(
 end
 
 # methods
+"""
+$(TYPEDSIGNATURES)
+
+gets the `n_features` field 
+"""
 get_n_features(rf::RandomFeature) = rf.n_features
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the `scalar_function` field 
+"""
 get_scalar_function(rf::ScalarFeature) = rf.scalar_function
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the `feature_sampler` field 
+"""
 get_feature_sampler(rf::RandomFeature) = rf.feature_sampler
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the `feature_sample` field 
+"""
 get_feature_sample(rf::RandomFeature) = rf.feature_sample
+
 get_hyper_sampler(rf::RandomFeature) = rf.hyper_sampler
 get_hyper_fixed(rf::RandomFeature) = rf.hyper_fixed
 
@@ -134,22 +186,27 @@ function get_optimizable_parameters(rf::RandomFeature)
 
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+builds features (possibly batched) from an input matrix of size (input dimension,number of samples)
+"""
 function build_features(
     rf::ScalarFeature,
     inputs_t::AbstractMatrix, # input_dim x n_sample
-    feature_idx,
+    batch_feature_idx::AbstractVector{Int},
 )
     inputs = permutedims(inputs_t, (2, 1)) # n_sample x input_dim
 
     # build: sigma * sqrt(2) * scalar_function(xi . input + b)
     samp = get_feature_sample(rf)
     xi = get_distribution(samp)["xi"] # dim_inputs x n_features
-    features = inputs * xi[:, feature_idx] # n_samples x n_features
+    features = inputs * xi[:, batch_feature_idx] # n_samples x n_features
 
     is_uniform_shift = "uniform" ∈ get_name(samp)
     if is_uniform_shift
         uniform = get_distribution(samp)["uniform"] # 1 x n_features
-        features .+= uniform[:, feature_idx]
+        features .+= uniform[:, batch_feature_idx]
     end
 
     sf = get_scalar_function(rf)
