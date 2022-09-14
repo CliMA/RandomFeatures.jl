@@ -44,7 +44,7 @@ using RandomFeatures.Utilities
 
     xsvd = Decomposition(x, "svd")
     @test get_decomposition(xsvd) == svd(x)
-    @test get_decomposition_is_inverse(xsvd) == false
+    @test get_parametric_type(xsvd) == Factor
     @test get_full_matrix(xsvd) == x
 
     xqr = Decomposition(x, "qr")
@@ -68,7 +68,7 @@ using RandomFeatures.Utilities
     y = [x for i in 1:N, x in 1:N]
     ypinv = Decomposition(y, "pinv")
     @test get_decomposition(ypinv) == pinv(y)
-    @test get_decomposition_is_inverse(ypinv) == true
+    @test get_parametric_type(ypinv) == PseInv
     @test get_full_matrix(ypinv) == y
 
     # to show pinv gets the right solution in a singular problem
