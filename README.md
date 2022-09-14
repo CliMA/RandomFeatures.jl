@@ -1,6 +1,6 @@
 # RandomFeatures.jl
 
-RandomFeatures is a Julia implementation of random features for high-dimensional function emulation. It builds on an earlier Python implementation by Nick Nelsen and Oliver Dunbar ([RandomFeatureKernel](https://github.com/odunbar/RandomFeatureKernel)).
+RandomFeatures is a Julia implementation of random features for high-dimensional function emulation. It builds on an earlier Python implementation by Nick Nelsen, Maya Mutic, and Oliver Dunbar ([RandomFeatureKernel](https://github.com/odunbar/RandomFeatureKernel)).
 
 
 | **Documentation**    | [![dev][docs-latest-img]][docs-latest-url]       |

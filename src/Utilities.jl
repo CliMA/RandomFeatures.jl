@@ -1,14 +1,16 @@
 module Utilities
 
-using LinearAlgebra
+using LinearAlgebra, DocStringExtensions
 
-export batch_generator, Decomposition, get_decomposition_is_inverse, get_decomposition, get_full_matrix, linear_solve
+export batch_generator,
+    Decomposition, StoredInvType, Factor, PseInv, get_decomposition, get_full_matrix, get_parametric_type, linear_solve
 
 """
-    function batch_generator(array::AbstractArray,batch_size::Int;dims::Int=1)
+$(TYPEDSIGNATURES)
 
-returns a vector of batched sub-array views of size `batch_size` along dimension `dims`.
-NOTE: it creates views not copies. Modifying a batch will modify the original!
+produces batched sub-array views of size `batch_size` along dimension `dims`.
+!!! note
+    this creates views not copies. Modifying a batch will modify the original!
 
 """
 function batch_generator(array::AbstractArray, batch_size::Int; dims::Int = 1)
@@ -28,16 +30,42 @@ end
 
 # Decomposition/linear solves for feature matrices
 
-struct Decomposition
+"""
+$(TYPEDEF)
+
+Type used as a flag for the stored Decomposition type
+"""
+abstract type StoredInvType end
+
+"""
+$(TYPEDEF)
+"""
+abstract type Factor <: StoredInvType end
+
+"""
+$(TYPEDEF)
+"""
+abstract type PseInv <: StoredInvType end
+
+"""
+$(TYPEDEF)
+
+Stores a matrix along with a decomposition `T=Factor`, or pseudoinverse `T=PseInv`
+
+$(TYPEDFIELDS)
+"""
+struct Decomposition{T}
+    "The original matrix"
     full_matrix::AbstractMatrix
+    "The matrix decomposition, or pseudoinverse"
     decomposition::Union{AbstractMatrix, Factorization}
-    decomposition_is_inverse::Bool
 end
 
 function Decomposition(mat::AbstractMatrix, method::AbstractString)
     if method == "pinv"
         decomposition = pinv(mat)
-        decomposition_is_inverse = true
+        return Decomposition{PseInv}(mat, decomposition)
+
     else
         if !isdefined(LinearAlgebra, Symbol(method))
             throw(
@@ -50,27 +78,46 @@ function Decomposition(mat::AbstractMatrix, method::AbstractString)
         else
             f = getfield(LinearAlgebra, Symbol(method))
             decomposition = f(mat)
-            decomposition_is_inverse = false
         end
 
+        return Decomposition{Factor}(mat, decomposition)
     end
-    return Decomposition(mat, decomposition, decomposition_is_inverse)
 end
-get_decomposition_is_inverse(d::Decomposition) = d.decomposition_is_inverse
+
+"""
+$(TYPEDSIGNATURES)
+
+get `decomposition` field
+"""
 get_decomposition(d::Decomposition) = d.decomposition
+
+"""
+$(TYPEDSIGNATURES)
+
+get `full_matrix` field
+"""
 get_full_matrix(d::Decomposition) = d.full_matrix
 
-function linear_solve(d::Decomposition, rhs::AbstractVecOrMat)
-    decomp = get_decomposition(d)
-    if get_decomposition_is_inverse(d)
-        #in this case the stored decomposition IS the (pseudo)inverse
-        return decomp * rhs
-    else
-        #in this case the stored decomposition is just a factorization
-        return decomp \ rhs
-    end
+"""
+$(TYPEDSIGNATURES)
+
+get the parametric type
+"""
+get_parametric_type(d::Decomposition{T}) where {T} = T
+
+"""
+$(TYPEDSIGNATURES)
+
+Solve the linear system based on `Decomposition` type
+"""
+function linear_solve(d::Decomposition, rhs::AbstractVecOrMat, ::Type{Factor})
+    return get_decomposition(d) \ rhs
+end
+function linear_solve(d::Decomposition, rhs::AbstractVecOrMat, ::Type{PseInv})
+    return get_decomposition(d) * rhs
 end
 
-
+linear_solve(d::Decomposition, rhs::AbstractVecOrMat) =
+    linear_solve(d::Decomposition, rhs::AbstractVecOrMat, get_parametric_type(d))
 
 end
