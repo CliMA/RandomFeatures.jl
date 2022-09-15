@@ -99,13 +99,13 @@ samples the distribution within `s`, `n_draws` times using a random number gener
 function sample(rng::AbstractRNG, s::Sampler, n_draws::Int)
     pd = get_parameter_distribution(s)
     samp = sample(rng, pd, n_draws)
-    constrained_samp = transform_unconstrained_to_constrained(pd,samp)
+    constrained_samp = transform_unconstrained_to_constrained(pd, samp)
     #now create a Samples-type distribution from the samples
     s_names = get_name(pd)
     s_slices = batch(pd) # e.g., [1, 2:3, 4:9]
-    s_samples = [Samples(constrained_samp[slice,:]) for slice in s_slices]    
-    s_constraints = [repeat([no_constraint()],size(slice,1)) for slice in s_slices]
-    
+    s_samples = [Samples(constrained_samp[slice, :]) for slice in s_slices]
+    s_constraints = [repeat([no_constraint()], size(slice, 1)) for slice in s_slices]
+
     return combine_distributions([
         ParameterDistribution(ss, sc, sn) for (ss, sc, sn) in zip(s_samples, s_constraints, s_names)
     ])
