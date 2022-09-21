@@ -14,10 +14,10 @@ seed = 2022
 @testset "Samplers" begin
 
     # create a Gaussian(0,4) distribution with EKP's ParameterDistribution constructors
-    μ_c = 0.0
-    σ_c = 4.0
+    μ_c = -4.0
+    σ_c = 1.0
 
-    pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
+    pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, 0.0)
     hsampler = HyperSampler(pd)
     @test get_optimizable_parameters(hsampler) == nothing
     @test get_uniform_shift_bounds(hsampler) == nothing
@@ -25,7 +25,6 @@ seed = 2022
     @test get_distribution(test_pd) == get_distribution(pd)
     @test get_all_constraints(test_pd) == get_all_constraints(pd)
     @test get_name(test_pd) == get_name(pd)
-
 
     fsampler = FeatureSampler(pd)
     @test get_optimizable_parameters(fsampler) == nothing
@@ -50,11 +49,12 @@ seed = 2022
 
     # test method: sample
     function sample_to_Sample(pd::ParameterDistribution, samp::AbstractMatrix)
+        constrained_samp = transform_unconstrained_to_constrained(pd, samp)
         #now create a Samples-type distribution from the samples
         s_names = get_name(pd)
         s_slices = batch(pd) # e.g., [1, 2:3, 4:9]
-        s_constraints = get_all_constraints(pd)
-        s_samples = [Samples(samp[slice, :]) for slice in s_slices]
+        s_samples = [Samples(constrained_samp[slice, :]) for slice in s_slices]
+        s_constraints = [repeat([no_constraint()], size(slice, 1)) for slice in s_slices]
 
         return combine_distributions([
             ParameterDistribution(ss, sc, sn) for (ss, sc, sn) in zip(s_samples, s_constraints, s_names)
