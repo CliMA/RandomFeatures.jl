@@ -5,13 +5,13 @@ using StatsBase
 using LinearAlgebra
 using Random
 
-using EnsembleKalmanProcesses.DataContainers
-using EnsembleKalmanProcesses.ParameterDistributions
 
 using RandomFeatures.Utilities
 using RandomFeatures.Samplers
 using RandomFeatures.Features
 using RandomFeatures.Methods
+using RandomFeatures.DataContainers
+using RandomFeatures.ParameterDistributions
 
 
 seed = 2023
@@ -30,7 +30,7 @@ seed = 2023
         n_features = 100
         sigma_fixed = Dict("sigma" => 10.0)
 
-        sff = ScalarFourierFeature(n_features, feature_sampler, hyper_fixed = sigma_fixed)
+        sff = ScalarFourierFeature(n_features, feature_sampler, feature_parameters = sigma_fixed)
 
         # configure the method, and fit 
         batch_sizes_err = Dict("train" => 100, "test" => 100, "NOT_FEATURES" => 100)
@@ -96,24 +96,23 @@ seed = 2023
             # NB we optimize hyperparameter values (σ_c,"sigma") in examples/Learn_hyperparameters/1d_to_1d_regression.jl
             # Such values may change with different ftest and different noise_sd
 
-            sigma_fixed = Dict("sigma" => 1.0)
             n_features = 400
 
             μ_c = 0.0
             pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
             feature_sampler = FeatureSampler(pd, rng = copy(rng))
 
-            sff = ScalarFourierFeature(n_features, feature_sampler, hyper_fixed = sigma_fixed)
+            sff = ScalarFourierFeature(n_features, feature_sampler)
 
-            sff = ScalarFourierFeature(n_features, feature_sampler, hyper_fixed = sigma_fixed)
+            sff = ScalarFourierFeature(n_features, feature_sampler)
 
             pd_snf = constrained_gaussian("xi", μ_c, σ_c_snf, -Inf, Inf)
             feature_sampler_snf = FeatureSampler(pd_snf, rng = copy(rng))
-            snf = ScalarNeuronFeature(n_features, feature_sampler_snf, hyper_fixed = sigma_fixed)
+            snf = ScalarNeuronFeature(n_features, feature_sampler_snf)
 
             pd_ssf = constrained_gaussian("xi", μ_c, σ_c_ssf, -Inf, Inf)
             feature_sampler_ssf = FeatureSampler(pd_ssf, rng = copy(rng))
-            ssf = ScalarFeature(n_features, feature_sampler_ssf, Sigmoid(), hyper_fixed = sigma_fixed)
+            ssf = ScalarFeature(n_features, feature_sampler_ssf, Sigmoid())
             #first case without batches
             lambda = noise_sd^2
             rfm = RandomFeatureMethod(sff, regularization = lambda)
@@ -274,8 +273,7 @@ seed = 2023
             ),
         )
         feature_sampler = FeatureSampler(pd, rng = copy(rng))
-        sigma_fixed = Dict("sigma" => 1.0)
-        sff = ScalarFourierFeature(n_features, feature_sampler, hyper_fixed = sigma_fixed)
+        sff = ScalarFourierFeature(n_features, feature_sampler)
 
         #second case with batching
         batch_sizes = Dict("train" => 500, "test" => 500, "feature" => 500)

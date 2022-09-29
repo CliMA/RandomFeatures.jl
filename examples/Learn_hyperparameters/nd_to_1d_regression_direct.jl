@@ -18,11 +18,10 @@ if PLOT_FLAG
 end
 using EnsembleKalmanProcesses
 const EKP = EnsembleKalmanProcesses
-
-using EnsembleKalmanProcesses.ParameterDistributions
-using EnsembleKalmanProcesses.DataContainers
 using EnsembleKalmanProcesses.Localizers
 
+using RandomFeatures.ParameterDistributions
+using RandomFeatures.DataContainers
 using RandomFeatures.Samplers
 using RandomFeatures.Features
 using RandomFeatures.Methods
@@ -36,7 +35,6 @@ rng = StableRNG(seed)
 function RFM_from_hyperparameters(
     rng::AbstractRNG,
     l::Union{Real, AbstractVecOrMat},
-    s::Real,
     regularizer::Real,
     n_features::Int,
     batch_sizes::Dict,
@@ -67,7 +65,7 @@ function RFM_from_hyperparameters(
     feature_sampler = FeatureSampler(pd, rng = rng)
     # Learn hyperparameters for different feature types
 
-    sf = ScalarFourierFeature(n_features, feature_sampler, hyper_fixed = Dict("sigma" => s))
+    sf = ScalarFourierFeature(n_features, feature_sampler)
     return RandomFeatureMethod(sf, regularization = regularizer)
 end
 
@@ -75,7 +73,6 @@ end
 function calculate_mean_and_coeffs(
     rng::AbstractRNG,
     l::Union{Real, AbstractVecOrMat},
-    s::Real,
     noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
@@ -95,7 +92,7 @@ function calculate_mean_and_coeffs(
     input_dim = size(itrain, 1)
 
     # build and fit the RF
-    rfm = RFM_from_hyperparameters(rng, l, s, regularizer, n_features, batch_sizes, input_dim)
+    rfm = RFM_from_hyperparameters(rng, l, regularizer, n_features, batch_sizes, input_dim)
     fitted_features = fit(rfm, io_train_cost, decomposition_type = "qr")
 
     test_batch_size = get_batch_size(rfm, "test")
@@ -112,7 +109,6 @@ end
 function estimate_mean_and_coeffnorm_covariance(
     rng::AbstractRNG,
     l::Union{Real, AbstractVecOrMat},
-    s::Real,
     noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
@@ -126,7 +122,7 @@ function estimate_mean_and_coeffnorm_covariance(
     coeffl2norm = zeros(1, n_samples)
     for i in 1:n_samples
         for j in 1:repeats
-            m, c = calculate_mean_and_coeffs(rng, l, s, noise_sd, n_features, batch_sizes, io_pairs)
+            m, c = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
             means[:, i] += m' / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
@@ -142,7 +138,6 @@ end
 function calculate_ensemble_mean_and_coeffnorm(
     rng::AbstractRNG,
     lvecormat::AbstractVecOrMat,
-    s::Real,
     noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
@@ -163,7 +158,7 @@ function calculate_ensemble_mean_and_coeffnorm(
     for i in collect(1:N_ens)
         for j in collect(1:repeats)
             l = lmat[:, i]
-            m, c = calculate_mean_and_coeffs(rng, l, s, noise_sd, n_features, batch_sizes, io_pairs)
+            m, c = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
             means[:, i] += m' / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
@@ -202,10 +197,6 @@ io_pairs = PairedDataContainer(x, y)
 
 # prior for non radial problem
 prior_lengthscale = constrained_gaussian("lengthscale", μ_l, σ_l, 0.0, Inf, repeats = input_dim)
-
-μ_s = 1.0
-
-#priors = combine_distributions([prior_lengthscale, prior_scaling])
 priors = prior_lengthscale
 
 # estimate the noise from running many RFM sample costs at the mean values
@@ -227,7 +218,6 @@ if CALC_TRUTH
     internal_Γ = estimate_mean_and_coeffnorm_covariance(
         rng,
         μ_l, # take mean values
-        μ_s, # take mean values
         noise_sd,
         n_features,
         batch_sizes,
@@ -267,16 +257,8 @@ for i in 1:N_iter
 
     #get parameters:
     lvec = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
-    g_ens = calculate_ensemble_mean_and_coeffnorm(
-        rng,
-        lvec,
-        μ_s,
-        noise_sd,
-        n_features,
-        batch_sizes,
-        io_pairs,
-        repeats = repeats,
-    )
+    g_ens =
+        calculate_ensemble_mean_and_coeffnorm(rng, lvec, noise_sd, n_features, batch_sizes, io_pairs, repeats = repeats)
 
     if i == update_cov_step # one update to the 
 
@@ -285,7 +267,6 @@ for i in 1:N_iter
         internal_Γ_new = estimate_mean_and_coeffnorm_covariance(
             rng,
             mean(constrained_u, dims = 2)[:, 1], # take mean values
-            μ_s, # take mean values
             noise_sd,
             n_features,
             batch_sizes,
@@ -358,8 +339,7 @@ pd = ParameterDistribution(
     ),
 )
 feature_sampler = FeatureSampler(pd, rng = copy(rng))
-sigma_fixed = Dict("sigma" => 1.0)
-sff = ScalarFourierFeature(n_features_test, feature_sampler, hyper_fixed = sigma_fixed)
+sff = ScalarFourierFeature(n_features_test, feature_sampler)
 
 #second case with batching
 

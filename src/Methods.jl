@@ -321,23 +321,10 @@ function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCont
     return cov_outputs, coeff_outputs
 end
 
-
-function posterior_cov(rfm::RandomFeatureMethod, u_input, v_input)
-
-end
-
-function get_optimizable_hyperparameters(rfm::RandomFeatureMethod)
-
-end
-
-function set_optimized_hyperparameters(rfm::RandomFeatureMethod, optimized_hyperparameters)
-
-end
-
-function evaluate_hyperparameter_cost(rfm::RandomFeatureMethod, input_data, output_data)
-
-end
-
+# TODO
+# function posterior_cov(rfm::RandomFeatureMethod, u_input, v_input)
+# 
+# end
 
 
 end # module
