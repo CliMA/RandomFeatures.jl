@@ -4,8 +4,8 @@ using StatsBase
 using LinearAlgebra
 using Random
 using Distributions
-using EnsembleKalmanProcesses.ParameterDistributions
 
+using RandomFeatures.ParameterDistributions
 using RandomFeatures.Samplers
 using RandomFeatures.Features
 
@@ -80,56 +80,24 @@ seed = 2202
         feature_sampler = FeatureSampler(pd, rng = copy(rng))
 
         # postive constraints for sigma
-        hyper_μ_c = 10.0
-        hyper_σ_c = 1.0
-        sigma_pd_err = constrained_gaussian("not sigma", hyper_μ_c, hyper_σ_c, 0.0, Inf)
-        sigma_sampler_err = HyperSampler(sigma_pd_err, rng = copy(rng))
-        sigma_pd = constrained_gaussian("sigma", hyper_μ_c, hyper_σ_c, 0.0, Inf)
-        sigma_sampler = HyperSampler(sigma_pd, rng = copy(rng))
-
         sigma_fixed_err = Dict("not sigma" => 10.0)
-        sigma_fixed = Dict("sigma" => 10.0)
-
-
 
         # Error checks
         @test_throws ArgumentError ScalarFeature(
             n_features,
             feature_sampler_err, # causes error
             relu,
-            hyper_fixed = sigma_fixed,
-        )
-        @test_throws ArgumentError ScalarFeature(
-            n_features,
-            feature_sampler,
-            relu, #neither hyper_sampler nor hyper_fixed defined
-        )
-        @test_throws ArgumentError ScalarFeature(
-            n_features,
-            feature_sampler,
-            relu,
-            hyper_sampler = sigma_sampler_err, # causes error
-        )
-        @test_throws ArgumentError ScalarFeature(
-            n_features,
-            feature_sampler,
-            relu,
-            hyper_fixed = sigma_fixed_err, # causes error
         )
         @test_logs (
             :info,
-            "both a `hyper_fixed=` and `hyper_sampler=` specify \"sigma\"," *
-            "\n defaulting to optimize \"sigma\" with hyper_sampler",
-        ) ScalarFeature(n_features, feature_sampler, relu, hyper_sampler = sigma_sampler, hyper_fixed = sigma_fixed)
-        sf_test =
-            ScalarFeature(n_features, feature_sampler, relu, hyper_sampler = sigma_sampler, hyper_fixed = sigma_fixed)
-
-        @test get_hyper_fixed(sf_test) == nothing # gets set to nothing when two are defined       
+            " Required feature parameter key \"sigma\" not defined, continuing with default value \"sigma\" = 1 ",
+        ) ScalarFeature(n_features, feature_sampler, relu, feature_parameters = sigma_fixed_err)
 
         # ScalarFeature and getters
         feature_sampler = FeatureSampler(pd, rng = copy(rng)) # to reset the rng
-        sf_test = ScalarFeature(n_features, feature_sampler, relu, hyper_sampler = sigma_sampler)
+        sf_test = ScalarFeature(n_features, feature_sampler, relu)
         @test get_n_features(sf_test) == n_features
+        @test get_feature_parameters(sf_test) == Dict("sigma" => 1.0)
 
         test_sample = sample(copy(rng), feature_sampler, n_features)
         sf_test_sample = get_feature_sample(sf_test)
@@ -140,11 +108,11 @@ seed = 2202
         @test get_name(sf_test_sample) == get_name(test_sample)
         sf_test_sampler = get_feature_sampler(sf_test)
         @test get_uniform_shift_bounds(sf_test_sampler) == [0, 2 * pi]
-        @test get_optimizable_parameters(sf_test_sampler) == nothing
 
-        sff_test = ScalarFourierFeature(n_features, feature_sampler, hyper_sampler = sigma_sampler)
 
-        snf_test = ScalarNeuronFeature(n_features, feature_sampler, hyper_sampler = sigma_sampler)
+        sff_test = ScalarFourierFeature(n_features, feature_sampler)
+
+        snf_test = ScalarNeuronFeature(n_features, feature_sampler)
 
         @test isa(get_scalar_function(sff_test), Features.Cosine)
         @test isa(get_scalar_function(snf_test), Relu)
@@ -164,7 +132,7 @@ seed = 2202
         sigma_value = 10.0
         sigma_fixed = Dict("sigma" => sigma_value)
 
-        sff_1d_test = ScalarFourierFeature(n_features, feature_sampler_1d, hyper_fixed = sigma_fixed)
+        sff_1d_test = ScalarFourierFeature(n_features, feature_sampler_1d, feature_parameters = sigma_fixed)
 
         # 1D input space -> 1D output space
         inputs_1d = reshape(collect(-1:0.01:1), (1, length(collect(-1:0.01:1))))
@@ -193,7 +161,7 @@ seed = 2202
         )
         feature_sampler_10d = FeatureSampler(pd_10d, rng = copy(rng))
 
-        sff_10d_test = ScalarNeuronFeature(n_features, feature_sampler_10d, hyper_fixed = sigma_fixed)
+        sff_10d_test = ScalarNeuronFeature(n_features, feature_sampler_10d, feature_parameters = sigma_fixed)
 
         features_10d = build_features(sff_10d_test, inputs_10d)
 

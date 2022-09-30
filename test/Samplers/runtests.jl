@@ -4,8 +4,8 @@ using StableRNGs
 using StatsBase
 using LinearAlgebra
 using Random
-using EnsembleKalmanProcesses.ParameterDistributions
 
+using RandomFeatures.ParameterDistributions
 using RandomFeatures.Samplers
 
 seed = 2022
@@ -18,16 +18,8 @@ seed = 2022
     σ_c = 1.0
 
     pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, 0.0)
-    hsampler = HyperSampler(pd)
-    @test get_optimizable_parameters(hsampler) == nothing
-    @test get_uniform_shift_bounds(hsampler) == nothing
-    test_pd = get_parameter_distribution(hsampler)
-    @test get_distribution(test_pd) == get_distribution(pd)
-    @test get_all_constraints(test_pd) == get_all_constraints(pd)
-    @test get_name(test_pd) == get_name(pd)
 
     fsampler = FeatureSampler(pd)
-    @test get_optimizable_parameters(fsampler) == nothing
     @test get_uniform_shift_bounds(fsampler) == [0, 2 * pi]
     unif_pd = ParameterDistribution(
         Dict("distribution" => Parameterized(Uniform(0, 2 * π)), "constraint" => no_constraint(), "name" => "uniform"),
@@ -41,11 +33,8 @@ seed = 2022
 
     # and other option for settings
     usb = nothing
-    oh = [:μ]
-    sampler2 = FeatureSampler(pd, optimizable_parameters = oh, uniform_shift_bounds = usb)
-
+    sampler2 = FeatureSampler(pd, uniform_shift_bounds = usb)
     @test get_uniform_shift_bounds(sampler2) == usb
-    @test get_optimizable_parameters(sampler2) == oh
 
     # test method: sample
     function sample_to_Sample(pd::ParameterDistribution, samp::AbstractMatrix)

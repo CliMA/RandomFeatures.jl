@@ -1,6 +1,18 @@
+"""
+# Imported modules:
+$(IMPORTS)
+
+# Exports:
+$(EXPORTS)
+"""
 module RandomFeatures
 
 using Statistics, LinearAlgebra, DocStringExtensions
+
+# importing parameter distirbutions
+import EnsembleKalmanProcesses: ParameterDistributions, DataContainers
+
+export ParameterDistributions, DataContainers
 
 #auxiliary modules
 include("Utilities.jl") # some additional tools

@@ -4,14 +4,7 @@ import StatsBase: sample
 
 using Random, Distributions, DocStringExtensions, EnsembleKalmanProcesses.ParameterDistributions
 
-export Sampler,
-    FeatureSampler,
-    HyperSampler,
-    get_parameter_distribution,
-    get_optimizable_parameters,
-    get_uniform_shift_bounds,
-    get_rng,
-    sample
+export Sampler, FeatureSampler, get_parameter_distribution, get_uniform_shift_bounds, get_rng, sample
 
 """
 $(TYPEDEF)
@@ -23,7 +16,6 @@ $(TYPEDFIELDS)
 struct Sampler
     "A probability distribution, possibly with constraints"
     parameter_distribution::ParameterDistribution
-    optimizable_parameters::Union{AbstractVector, Nothing}
     "Either `nothing` , or `[lower bound, upper bound]`, which defines a uniform distribution used as a random shift"
     uniform_shift_bounds::Union{AbstractVector, Nothing}
     "A random number generator state"
@@ -37,7 +29,6 @@ basic constructor for a `Sampler`
 """
 function FeatureSampler(
     parameter_distribution::ParameterDistribution;
-    optimizable_parameters::Union{AbstractVector, Nothing} = nothing,
     uniform_shift_bounds::Union{AbstractVector, Nothing} = [0, 2 * pi],
     rng::AbstractRNG = Random.GLOBAL_RNG,
 )
@@ -59,13 +50,7 @@ function FeatureSampler(
         uniform_shift_bounds = nothing
     end
 
-    return Sampler(pd, optimizable_parameters, uniform_shift_bounds, rng)
-
-end
-
-
-function HyperSampler(parameter_distribution::ParameterDistribution; rng::AbstractRNG = Random.GLOBAL_RNG)
-    return Sampler(parameter_distribution, nothing, nothing, rng)
+    return Sampler(pd, uniform_shift_bounds, rng)
 
 end
 
@@ -75,7 +60,6 @@ $(TYPEDSIGNATURES)
 gets the `parameter_distribution` field 
 """
 get_parameter_distribution(s::Sampler) = s.parameter_distribution
-get_optimizable_parameters(s::Sampler) = s.optimizable_parameters
 
 """
 $(TYPEDSIGNATURES)

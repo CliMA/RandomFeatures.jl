@@ -12,6 +12,7 @@ get_n_features
 get_scalar_function
 get_feature_sampler
 get_feature_sample
+get_feature_parameters
 sample(rf::RandomFeature)
 ```
 # Scalar Functions

@@ -20,9 +20,8 @@ end
 using EnsembleKalmanProcesses
 const EKP = EnsembleKalmanProcesses
 
-using EnsembleKalmanProcesses.ParameterDistributions
-using EnsembleKalmanProcesses.DataContainers
-
+using RandomFeatures.ParameterDistributions
+using RandomFeatures.DataContainers
 using RandomFeatures.Samplers
 using RandomFeatures.Features
 using RandomFeatures.Methods
@@ -36,7 +35,6 @@ rng = StableRNG(seed)
 function RFM_from_hyperparameters(
     rng::AbstractRNG,
     l::Real,
-    s::Real,
     regularizer::Real,
     n_features::Int,
     batch_sizes::Dict,
@@ -50,11 +48,11 @@ function RFM_from_hyperparameters(
     # Learn hyperparameters for different feature types
 
     if feature_type == "fourier"
-        sf = ScalarFourierFeature(n_features, feature_sampler, hyper_fixed = Dict("sigma" => s))
+        sf = ScalarFourierFeature(n_features, feature_sampler)
     elseif feature_type == "neuron"
-        sf = ScalarNeuronFeature(n_features, feature_sampler, hyper_fixed = Dict("sigma" => s))
+        sf = ScalarNeuronFeature(n_features, feature_sampler)
     elseif feature_type == "sigmoid"
-        sf = ScalarFeature(n_features, feature_sampler, Sigmoid(), hyper_fixed = Dict("sigma" => s))
+        sf = ScalarFeature(n_features, feature_sampler, Sigmoid())
     end
     return RandomFeatureMethod(sf, regularization = regularizer)
 end
@@ -63,7 +61,6 @@ end
 function calculate_mean_and_coeffs(
     rng::AbstractRNG,
     l::Real,
-    s::Real,
     noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
@@ -82,7 +79,7 @@ function calculate_mean_and_coeffs(
     otest = reshape(get_outputs(io_pairs)[1, (n_train + 1):end], 1, :)
 
     # build and fit the RF
-    rfm = RFM_from_hyperparameters(rng, l, s, regularizer, n_features, batch_sizes, feature_type)
+    rfm = RFM_from_hyperparameters(rng, l, regularizer, n_features, batch_sizes, feature_type)
     fitted_features = fit(rfm, io_train_cost)
 
     test_batch_size = get_batch_size(rfm, "test")
@@ -98,7 +95,6 @@ end
 function estimate_mean_and_coeffnorm_covariance(
     rng::AbstractRNG,
     l::Real,
-    s::Real,
     noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
@@ -113,7 +109,7 @@ function estimate_mean_and_coeffnorm_covariance(
     coeffl2norm = zeros(1, n_samples)
     for i in 1:n_samples
         for j in 1:repeats
-            m, c = calculate_mean_and_coeffs(rng, l, s, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
+            m, c = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
             means[:, i] += m' / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
@@ -127,7 +123,6 @@ end
 function calculate_ensemble_mean_and_coeffnorm(
     rng::AbstractRNG,
     lvec::AbstractVector,
-    svec::AbstractVector,
     noise_sd::Real,
     n_features::Int,
     batch_sizes::Dict,
@@ -141,9 +136,9 @@ function calculate_ensemble_mean_and_coeffnorm(
 
     means = zeros(n_test, N_ens)
     coeffl2norm = zeros(1, N_ens)
-    for (i, l, s) in zip(collect(1:N_ens), lvec, svec)
+    for (i, l) in zip(collect(1:N_ens), lvec)
         for j in collect(1:repeats)
-            m, c = calculate_mean_and_coeffs(rng, l, s, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
+            m, c = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
             means[:, i] += m' / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
@@ -183,11 +178,6 @@ ytest = ftest(get_data(xtest))
 σ_l = 10.0
 prior_lengthscale = constrained_gaussian("lengthscale", μ_l, σ_l, 0.0, Inf)
 
-μ_s = 1.0
-#σ_s = 5.0
-#prior_scaling = constrained_gaussian("scaling", μ_l, σ_l, 0.0, Inf)
-#priors = combine_distributions([prior_lengthscale, prior_scaling])
-
 priors = prior_lengthscale
 
 # estimate the noise from running many RFM sample costs at the mean values
@@ -206,7 +196,6 @@ for (idx, type) in enumerate(feature_types)
     internal_Γ = estimate_mean_and_coeffnorm_covariance(
         rng,
         μ_l, # take mean values
-        μ_s, # take mean values
         noise_sd,
         n_features,
         batch_sizes,
@@ -238,7 +227,6 @@ for (idx, type) in enumerate(feature_types)
         g_ens = calculate_ensemble_mean_and_coeffnorm(
             rng,
             lvec,
-            repeat([μ_s], length(lvec)),#svec,
             noise_sd,
             n_features,
             batch_sizes,
@@ -289,11 +277,11 @@ for (idx, sd, feature_type) in zip(collect(1:length(σ_c)), σ_c, feature_types)
     feature_sampler = FeatureSampler(pd, rng = copy(rng))
 
     if feature_type == "fourier"
-        sf = ScalarFourierFeature(n_features_test, feature_sampler, hyper_fixed = Dict("sigma" => 1.0))
+        sf = ScalarFourierFeature(n_features_test, feature_sampler)
     elseif feature_type == "neuron"
-        sf = ScalarNeuronFeature(n_features_test, feature_sampler, hyper_fixed = Dict("sigma" => 1.0))
+        sf = ScalarNeuronFeature(n_features_test, feature_sampler)
     elseif feature_type == "sigmoid"
-        sf = ScalarFeature(n_features_test, feature_sampler, Sigmoid(), hyper_fixed = Dict("sigma" => 1.0))
+        sf = ScalarFeature(n_features_test, feature_sampler, Sigmoid())
     end
 
     push!(rfms, RandomFeatureMethod(sf, batch_sizes = batch_sizes, regularization = regularizer))
