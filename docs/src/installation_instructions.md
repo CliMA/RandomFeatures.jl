@@ -31,7 +31,7 @@ clone the repository and then instantiate, e.g.,
     Most times, cloning the repository in not necessary. If you only want to use the package's
     functionality, adding the packages as a dependency on your project is enough.
 
-### Running the test suite
+### [Running the test suite](@id test-suite)
 
 You can run the package's tests:
 
@@ -44,7 +44,12 @@ Alternatively, you can do this from within the repository:
 julia> ]
 (RandomFeatures) pkg> test
 ```
-
+!!! note "Plot outputs"
+    Tests will output plots by setting the environment variable `TEST_PLOT_FLAG`. For example,
+    ```
+    julia> ENV["TEST_PLOT_FLAG"] = true
+    ```
+    
 ### Building the documentation locally
 
 Once the project is built, you can build the project documentation under the `docs/` sub-project:

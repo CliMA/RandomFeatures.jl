@@ -15,7 +15,7 @@ get_feature_sample
 get_feature_parameters
 sample(rf::RandomFeature)
 ```
-# Scalar Functions
+# [Scalar Functions](@id scalar-functions)
 
 ```@docs
 ScalarFunction
