@@ -20,6 +20,7 @@ pages = [
     "Home" => "index.md",
     "Installation instructions" => "installation_instructions.md",
     "Contributing" => "contributing.md",
+    "Setting up the Method" => "setting_up.md",
     #    "Samplers" => "Samplers.md",
     #    "Features" => "Features.md",
     #    "Methods" => "Methods.md",
