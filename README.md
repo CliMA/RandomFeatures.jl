@@ -5,11 +5,15 @@ RandomFeatures is a Julia implementation of random features for high-dimensional
 
 | **Documentation**    | [![dev][docs-latest-img]][docs-latest-url]       |
 |----------------------|--------------------------------------------------|
+| **DOI**              | [![DOI][zenodo-img]][zenodo-latest-url]          |
 | **Docs Build**       | [![docs build][docs-bld-img]][docs-bld-url]      |
 | **Unit tests**       | [![unit tests][unit-tests-img]][unit-tests-url]  |
 | **Code Coverage**    | [![codecov][codecov-img]][codecov-url]           |
 | **Bors**             | [![Bors enabled][bors-img]][bors-url]            |
 
+
+[zenodo-img]: https://zenodo.org/badge/523830850.svg
+[zenodo-latest-url]: https://zenodo.org/badge/latestdoi/523830850
 
 [docs-latest-img]: https://img.shields.io/badge/docs-latest-blue.svg
 [docs-latest-url]: https://CliMA.github.io/RandomFeatures.jl/dev/
