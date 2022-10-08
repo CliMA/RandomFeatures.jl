@@ -143,7 +143,7 @@ seed = 2202
         samp_xi = reshape(sample(rng1, pd, n_features), (1, n_features))
         samp_unif = reshape(rand(rng1, Uniform(0, 2 * pi), n_features), (1, n_features))
         inputs_1d_T = permutedims(inputs_1d, (2, 1))
-        rf_test = sqrt(2) * sigma_value * cos.(inputs_1d_T * samp_xi .+ samp_unif)
+        rf_test = sigma_value * cos.(inputs_1d_T * samp_xi .+ samp_unif)
         @test size(features_1d) == (n_samples_1d, n_features)
         @test all(abs.(rf_test - features_1d) .< 10 * eps()) # sufficiently big to deal with inaccuracy of cosine
 
@@ -169,7 +169,7 @@ seed = 2202
         samp_xi = reshape(sample(rng2, pd_10d, n_features), (10, n_features))
         samp_unif = reshape(rand(rng2, Uniform(0, 2 * pi), n_features), (1, n_features))
         inputs_10d_T = permutedims(inputs_10d, (2, 1))
-        rf_test2 = sqrt(2) * sigma_value * max.(inputs_10d_T * samp_xi .+ samp_unif, 0)
+        rf_test2 = sigma_value * max.(inputs_10d_T * samp_xi .+ samp_unif, 0)
         @test size(features_10d) == (n_samples, n_features)
 
         @test all(abs.(rf_test2 - features_10d) .< 1e3 * eps()) # sufficiently big to deal with inaccuracy of relu

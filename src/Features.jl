@@ -3,7 +3,6 @@ module Features
 include("ScalarFunctions.jl")
 
 import StatsBase: sample
-import RandomFeatures.Samplers: get_optimizable_parameters
 
 using EnsembleKalmanProcesses.ParameterDistributions, DocStringExtensions, RandomFeatures.Samplers
 
@@ -56,7 +55,7 @@ function ScalarFeature(
     n_features::Int,
     feature_sampler::Sampler,
     scalar_fun::ScalarFunction;
-    feature_parameters::Union{Dict} = Dict("sigma" => 1),
+    feature_parameters::Dict = Dict("sigma" => 1),
 )
     if "xi" ∉ get_name(get_parameter_distribution(feature_sampler))
         throw(
@@ -83,8 +82,8 @@ $(TYPEDSIGNATURES)
 
 Constructor for a `Sampler` with cosine features
 """
-function ScalarFourierFeature(n_features::Int, sampler::Sampler; kwargs...)
-    return ScalarFeature(n_features, sampler, Cosine(); kwargs...)
+function ScalarFourierFeature(n_features::Int, sampler::Sampler; feature_parameters::Dict = Dict("sigma" => sqrt(2.0)))
+    return ScalarFeature(n_features, sampler, Cosine(); feature_parameters = feature_parameters)
 end
 
 """
@@ -157,7 +156,7 @@ function build_features(
     end
 
     sf = get_scalar_function(rf)
-    features = sqrt(2) * apply_scalar_function(sf, features)
+    features = apply_scalar_function(sf, features)
 
     sigma = get_feature_parameters(rf)["sigma"] # scalar
     features *= sigma
