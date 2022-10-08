@@ -72,9 +72,10 @@ seed = 2023
 
         # values with 1/var learning in examples/Learn_hyperparameters/1d_to_1d_regression_direct_withcov.jl
 
-        σ_c_vec = [3.00154525908853, 2.0496446106670714, 2.073548789125994]
-        σ_c_snf_vec = [9.62026163549361, 3.2488202130034516, 2.7036201353076037]
-        σ_c_ssf_vec = [3.767125651048547, 3.59681818476263, 4.550747172433403]
+        σ_c_vec = [2.5903560156755194, 1.9826946095752571, 2.095420236641444]
+        σ_c_snf_vec = [9.606414682837055, 4.406586351058134, 2.756419855446525]
+        σ_c_ssf_vec = [2.2041952067873742, 3.0205667976224384, 4.307656997874708]
+
         for (exp_idx, n_data, σ_c, σ_c_snf, σ_c_ssf) in
             zip(1:length(exp_range), n_data_exp, σ_c_vec, σ_c_snf_vec, σ_c_ssf_vec)
 
@@ -93,7 +94,7 @@ seed = 2023
             ytest_nonoise = ftest(get_data(xtest))
 
             # specify feature distributions
-            # NB we optimize hyperparameter values (σ_c,"sigma") in examples/Learn_hyperparameters/1d_to_1d_regression.jl
+            # NB we optimize hyperparameter values σ_c in examples/Learn_hyperparameters/1d_to_1d_regression.jl
             # Such values may change with different ftest and different noise_sd
 
             n_features = 400
@@ -101,9 +102,6 @@ seed = 2023
             μ_c = 0.0
             pd = constrained_gaussian("xi", μ_c, σ_c, -Inf, Inf)
             feature_sampler = FeatureSampler(pd, rng = copy(rng))
-
-            sff = ScalarFourierFeature(n_features, feature_sampler)
-
             sff = ScalarFourierFeature(n_features, feature_sampler)
 
             pd_snf = constrained_gaussian("xi", μ_c, σ_c_snf, -Inf, Inf)
@@ -148,6 +146,11 @@ seed = 2023
             prior_mean_relu, prior_cov_relu = predict_prior(rfm_relu, xtest)
             prior_mean_sig, prior_cov_sig = predict_prior(rfm_sig, xtest)
 
+            # enforce positivity
+            prior_cov = max.(0, prior_cov)
+            prior_cov_relu = max.(0, prior_cov_relu)
+            prior_cov_sig = max.(0, prior_cov_sig)
+
             # added Plots for these different predictions:
             if TEST_PLOT_FLAG
 
@@ -162,7 +165,7 @@ seed = 2023
                     legend = :topleft,
                     label = "Target",
                 )
-                #plot!(get_data(xtest)', prior_mean', linestyle=:dash, ribbon = [2*sqrt.(prior_cov); 2*sqrt.(prior_cov)]',label="", alpha=0.5, color=clrs[1])        
+
                 plot!(
                     get_data(xtest)',
                     pred_mean',
@@ -170,7 +173,7 @@ seed = 2023
                     label = "Fourier",
                     color = clrs[1],
                 )
-                #plot!(get_data(xtest)', prior_mean_relu', ribbon = [2*sqrt.(prior_cov_relu); 2*sqrt.(prior_cov_relu)]', linestyle=:dash, label="", alpha=0.5, color=clrs[2])
+
                 plot!(
                     get_data(xtest)',
                     pred_mean_relu',
@@ -178,7 +181,7 @@ seed = 2023
                     label = "Relu",
                     color = clrs[2],
                 )
-                #plot!(get_data(xtest)', prior_mean_sig', ribbon = [2*sqrt.(prior_cov_sig); 2*sqrt.(prior_cov_sig)]', linestyle=:dash, label="", alpha=0.5, color=clrs[3])
+
                 plot!(
                     get_data(xtest)',
                     pred_mean_sig',
