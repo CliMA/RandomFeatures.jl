@@ -15,7 +15,7 @@ function include_test(_module)
     return nothing
 end
 
-@testset "EnsembleKalmanProcesses" begin
+@testset "RandomFeatures" begin
     all_tests = isempty(ARGS) || "all" in ARGS ? true : false
 
     function has_submodule(sm)

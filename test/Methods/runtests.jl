@@ -150,7 +150,9 @@ seed = 2023
             prior_cov = max.(0, prior_cov)
             prior_cov_relu = max.(0, prior_cov_relu)
             prior_cov_sig = max.(0, prior_cov_sig)
-
+            pred_cov = max.(0, pred_cov)
+            pred_cov_relu = max.(0, pred_cov_relu)
+            pred_cov_sig = max.(0, pred_cov_sig)
             # added Plots for these different predictions:
             if TEST_PLOT_FLAG
 
@@ -169,7 +171,7 @@ seed = 2023
                 plot!(
                     get_data(xtest)',
                     pred_mean',
-                    ribbon = [2 * sqrt.(pred_cov); 2 * sqrt.(pred_cov)]',
+                    ribbon = [2 * sqrt.(pred_cov[1, 1, :]); 2 * sqrt.(pred_cov[1, 1, :])]',
                     label = "Fourier",
                     color = clrs[1],
                 )
@@ -177,7 +179,7 @@ seed = 2023
                 plot!(
                     get_data(xtest)',
                     pred_mean_relu',
-                    ribbon = [2 * sqrt.(pred_cov_relu); 2 * sqrt.(pred_cov_relu)]',
+                    ribbon = [2 * sqrt.(pred_cov_relu[1, 1, :]); 2 * sqrt.(pred_cov_relu[1, 1, :])]',
                     label = "Relu",
                     color = clrs[2],
                 )
@@ -185,7 +187,7 @@ seed = 2023
                 plot!(
                     get_data(xtest)',
                     pred_mean_sig',
-                    ribbon = [2 * sqrt.(pred_cov_sig); 2 * sqrt.(pred_cov_sig)]',
+                    ribbon = [2 * sqrt.(pred_cov_sig[1, 1, :]); 2 * sqrt.(pred_cov_sig[1, 1, :])]',
                     label = "Sigmoid",
                     color = clrs[3],
                 )
@@ -218,8 +220,8 @@ seed = 2023
         println("Prior for 1d->1d:")
         println("L2 errors: fourier, neuron, sigmoid")
         println(priorL2err)
-        #println("weighted L2 errors: fourier, neuron, sigmoid")
-        #println(priorweightedL2err)
+        # println("weighted L2 errors: fourier, neuron, sigmoid")
+        # println(priorweightedL2err)
 
         println("Posterior for 1d->1d, with increasing data:")
         println("L2 errors: fourier, neuron, sigmoid")
@@ -314,7 +316,7 @@ seed = 2023
                 yslice = ftest_nd_to_1d(xslicenew)
 
                 pred_mean_slice, pred_cov_slice = predict(rfm_batch, fitted_batched_features, DataContainer(xslicenew))
-                pred_cov_slice = max.(pred_cov_slice, 0.0)
+                pred_cov_slice[1, 1, :] = max.(pred_cov_slice[1, 1, :], 0.0)
                 plt = plot(
                     xrange,
                     yslice',
@@ -328,7 +330,7 @@ seed = 2023
                 plot!(
                     xrange,
                     pred_mean_slice',
-                    ribbon = [2 * sqrt.(pred_cov_slice); 2 * sqrt.(pred_cov_slice)]',
+                    ribbon = [2 * sqrt.(pred_cov_slice[1, 1, :]); 2 * sqrt.(pred_cov_slice[1, 1, :])]',
                     label = "Fourier",
                     color = "blue",
                 )
@@ -340,5 +342,139 @@ seed = 2023
         end
     end
 
+    @testset "Fit and predict: 1-D -> M-D" begin
+        rng = StableRNG(seed + 2)
+        input_dim = 1
+        output_dim = 2
+        n_features = 100
+        function ftest_1d_to_2d(x::AbstractMatrix)
+            out = zeros(2, size(x, 2))
+            out[1, :] = mapslices(column -> sin(norm([i * c for (i, c) in enumerate(column)])^2), x, dims = 1)
+            out[2, :] = mapslices(column -> exp(-0.1 * norm([i * c for (i, c) in enumerate(column)])^2), x, dims = 1)
+            return out
+        end
+
+        #problem formulation
+        n_data = 50
+        x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
+        noise_sd = 1e-1
+        lambda = noise_sd^2
+        noise = rand(rng, Normal(0, noise_sd), (output_dim, n_data))
+
+        y = ftest_1d_to_2d(x) + noise
+        io_pairs = PairedDataContainer(x, y)
+
+        n_test = 200
+        xtestvec = rand(rng, MvNormal(zeros(input_dim), I), n_test)
+
+        xtest = DataContainer(xtestvec)
+        ytest_nonoise = ftest_1d_to_2d(get_data(xtest))
+
+        # numbers from examples/hyperparameter_learning/nd_to_md_regression_direct_withcov.jl
+        M = zeros(input_dim, output_dim)
+        U = Diagonal([0.9634446604994962])
+        V = Diagonal([4.681506805674389, 1.7898435955588452])
+
+
+        dist = MatrixNormal(M, U, V) #produces matrix samples
+        pd = ParameterDistribution(
+            Dict(
+                "distribution" => Parameterized(dist),
+                "constraint" => repeat([no_constraint()], input_dim * output_dim),
+                "name" => "xi",
+            ),
+        )
+        feature_sampler = FeatureSampler(pd, output_dim, rng = copy(rng))
+        vff = VectorFourierFeature(n_features, output_dim, feature_sampler)
+
+        batch_sizes = Dict("train" => 500, "test" => 500, "feature" => 500)
+        rfm_batch = RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = lambda)
+        fitted_batched_features = fit(rfm_batch, io_pairs)
+
+        # test prediction L^2 error of mean
+        prior_mean, prior_cov = predict_prior(rfm_batch, xtest) # predict inputs from unfitted features
+        #  2 x n,  2 x 2 x n
+        priorL2err = sqrt.(sum((ytest_nonoise - prior_mean) .^ 2))
+        priorweightedL2err = [0.0]
+        for i in 1:n_test
+            diff = reshape(ytest_nonoise[:, i] - prior_mean[:, i], :, 1)
+            priorweightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(prior_cov[:, :, i]) * diff)
+        end
+        priorweightedL2err = sqrt.(priorweightedL2err)[:]
+        println("Prior for 1d->2d")
+        println("L2 error: ", priorL2err)
+        #        println("weighted L2 error: ", priorweightedL2err)
+
+        pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
+        L2err = sqrt.(sum((ytest_nonoise - pred_mean) .^ 2))
+        weightedL2err = [0.0]
+        for i in 1:n_test
+            diff = reshape(ytest_nonoise[:, i] - pred_mean[:, i], :, 1)
+            weightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(pred_cov[:, :, i]) * diff)
+        end
+        weightedL2err = sqrt.(weightedL2err)[:]
+        println("Posterior for 1d->2d")
+        println("L2 error: ", L2err)
+        #        println("weighted L2 error: ", weightedL2err)
+
+        @test L2err < priorL2err
+        #        @test weightedL2err < priorweightedL2err
+
+
+        if TEST_PLOT_FLAG
+            # learning on Normal(0,1) dist, forecast on (-2,2)
+            xrange = reshape(collect(-2:0.02:2), 1, :)
+
+            yrange = ftest_1d_to_2d(xrange)
+
+            pred_mean_slice, pred_cov_slice = predict(rfm_batch, fitted_batched_features, DataContainer(xrange))
+
+            pred_cov_slice[1, 1, :] = max.(pred_cov_slice[1, 1, :], 0.0)
+            pred_cov_slice[2, 2, :] = max.(pred_cov_slice[2, 2, :], 0.0)
+
+            #plot diagonal
+            xplot = xrange[:]
+            plt = plot(
+                xplot,
+                yrange[1, :],
+                show = false,
+                color = "black",
+                linewidth = 5,
+                size = (600, 600),
+                legend = :topleft,
+                label = "Target",
+            )
+            plot!(
+                xplot,
+                yrange[2, :],
+                show = false,
+                color = "black",
+                linewidth = 5,
+                size = (600, 600),
+                legend = :topleft,
+                label = "Target",
+            )
+            println(y[1, :])
+            scatter!(x[:], y[1, :], color = "blue", label = "", marker = :x)
+
+            plot!(
+                xplot,
+                pred_mean_slice[1, :],
+                ribbon = [2 * sqrt.(pred_cov_slice[1, 1, :]); 2 * sqrt.(pred_cov_slice[1, 1, :])],
+                label = "Fourier",
+                color = "blue",
+            )
+            scatter!(x[:], y[2, :], color = "red", label = "", marker = :x)
+            plot!(
+                xplot,
+                pred_mean_slice[2, :],
+                ribbon = [2 * sqrt.(pred_cov_slice[2, 2, :]); 2 * sqrt.(pred_cov_slice[2, 2, :])],
+                label = "Fourier",
+                color = "red",
+            )
+
+            savefig(plt, joinpath(@__DIR__, "Fit_and_predict_1D_to_2D.pdf"))
+        end
+    end
 
 end

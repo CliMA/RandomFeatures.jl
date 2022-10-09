@@ -1,6 +1,6 @@
 module Utilities
 
-using LinearAlgebra, DocStringExtensions
+using LinearAlgebra, DocStringExtensions, Tullio
 
 export batch_generator,
     Decomposition, StoredInvType, Factor, PseInv, get_decomposition, get_full_matrix, get_parametric_type, linear_solve
@@ -110,14 +110,22 @@ $(TYPEDSIGNATURES)
 
 Solve the linear system based on `Decomposition` type
 """
-function linear_solve(d::Decomposition, rhs::AbstractVecOrMat, ::Type{Factor})
-    return get_decomposition(d) \ rhs
+function linear_solve(d::Decomposition, rhs::AbstractArray, ::Type{Factor})
+    #    return get_decomposition(d) \ rhs
+    M, N, P = size(rhs)
+    x = zeros(M, N, P)
+    for p in 1:P # \ can handle "Matrix \ Matrix", but not "Matrix \ 3-tensor"
+        x[:, :, p] = get_decomposition(d) \ rhs[:, :, p]
+    end
+    return x
 end
-function linear_solve(d::Decomposition, rhs::AbstractVecOrMat, ::Type{PseInv})
-    return get_decomposition(d) * rhs
+function linear_solve(d::Decomposition, rhs::AbstractArray, ::Type{PseInv})
+    #get_decomposition(d) * rhs
+    @tullio x[m, n, p] := get_decomposition(d)[m, i] * rhs[i, n, p]
+    return x
 end
 
-linear_solve(d::Decomposition, rhs::AbstractVecOrMat) =
-    linear_solve(d::Decomposition, rhs::AbstractVecOrMat, get_parametric_type(d))
+linear_solve(d::Decomposition, rhs::AbstractArray) =
+    linear_solve(d::Decomposition, rhs::AbstractArray, get_parametric_type(d))
 
 end
