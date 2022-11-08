@@ -66,7 +66,7 @@ function RFM_from_hyperparameters(
     # Learn hyperparameters for different feature types
 
     sf = ScalarFourierFeature(n_features, feature_sampler)
-    return RandomFeatureMethod(sf, regularization = regularizer)
+    return RandomFeatureMethod(sf, batch_sizes = batch_sizes, regularization = regularizer)
 end
 
 

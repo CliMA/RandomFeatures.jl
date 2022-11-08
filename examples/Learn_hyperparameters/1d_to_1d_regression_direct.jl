@@ -54,7 +54,7 @@ function RFM_from_hyperparameters(
     elseif feature_type == "sigmoid"
         sf = ScalarFeature(n_features, feature_sampler, Sigmoid())
     end
-    return RandomFeatureMethod(sf, regularization = regularizer)
+    return RandomFeatureMethod(sf, batch_sizes = batch_sizes, regularization = regularizer)
 end
 
 

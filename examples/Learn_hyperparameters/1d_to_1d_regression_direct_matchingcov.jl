@@ -53,7 +53,7 @@ function RFM_from_hyperparameters(
     elseif feature_type == "sigmoid"
         sf = ScalarFeature(n_features, feature_sampler, Sigmoid())
     end
-    return RandomFeatureMethod(sf, regularization = regularizer)
+    return RandomFeatureMethod(sf, batch_sizes = batch_sizes, regularization = regularizer)
 end
 
 
@@ -110,8 +110,8 @@ function estimate_mean_cov_and_coeffnorm_covariance(
     for i in 1:n_samples
         for j in 1:repeats
             m, v, c = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
-            means[:, i] += m' / repeats
-            covs[:, i] += v' / repeats
+            means[:, i] += m[1, :] / repeats
+            covs[:, i] += v[1, 1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
     end
@@ -142,8 +142,8 @@ function calculate_ensemble_mean_cov_and_coeffnorm(
     for (i, l) in zip(collect(1:N_ens), lvec)
         for j in collect(1:repeats)
             m, v, c = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
-            means[:, i] += m' / repeats
-            covs[:, i] += v' / repeats
+            means[:, i] += m[1, :] / repeats
+            covs[:, i] += v[1, 1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
     end
@@ -332,11 +332,11 @@ if PLOT_FLAG
     for (idx, rfm, fit, feature_type, clr) in zip(collect(1:length(σ_c)), rfms, fits, feature_types, clrs)
 
         pred_mean, pred_cov = predict(rfm, fit, DataContainer(xplt))
-        pred_cov = max.(pred_cov, 0.0)
+        pred_cov[1, 1, :] = max.(pred_cov[1, 1, :], 0.0)
         plot!(
             xplt',
             pred_mean',
-            ribbon = [2 * sqrt.(pred_cov); 2 * sqrt.(pred_cov)]',
+            ribbon = [2 * sqrt.(pred_cov[1, 1, :]); 2 * sqrt.(pred_cov[1, 1, :])]',
             label = feature_type,
             color = clr,
         )

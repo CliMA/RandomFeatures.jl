@@ -38,9 +38,11 @@ using RandomFeatures.Utilities
     x = [i + j for i in 1:N, j in 1:N]
     x = 1 ./ (x + x') + 1e-3 * I
 
-    b = ones(N)
-
-    xsolve = x \ b
+    # internally RHS are stored with three indices.
+    # (n_features x n_samples, output_dim)
+    b = ones(N, 1, 1)
+    xsolve = zeros(size(b))
+    xsolve[:, 1, 1] = x \ b[:, 1, 1]
 
     xsvd = Decomposition(x, "svd")
     @test get_decomposition(xsvd) == svd(x)
@@ -72,8 +74,9 @@ using RandomFeatures.Utilities
     @test get_full_matrix(ypinv) == y
 
     # to show pinv gets the right solution in a singular problem
-    @test_throws SingularException y \ b
-    ysolve = pinv(y) * b
+    @test_throws SingularException y \ b[:, 1, 1]
+    ysolve = zeros(size(b))
+    ysolve[:, :, 1] = pinv(y) * b[:, :, 1]
     @test linear_solve(ypinv, b) ≈ ysolve
 
 

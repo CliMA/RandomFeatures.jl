@@ -66,7 +66,7 @@ function RFM_from_hyperparameters(
     # Learn hyperparameters for different feature types
 
     sf = ScalarFourierFeature(n_features, feature_sampler)
-    return RandomFeatureMethod(sf, regularization = regularizer)
+    return RandomFeatureMethod(sf, batch_sizes = batch_sizes, regularization = regularizer)
 end
 
 
@@ -124,8 +124,8 @@ function estimate_mean_cov_and_coeffnorm_covariance(
     for i in 1:n_samples
         for j in 1:repeats
             m, v, c = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
-            means[:, i] += m' / repeats
-            covs[:, i] += v' / repeats
+            means[:, i] += m[1, :] / repeats
+            covs[:, i] += v[1, 1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
     end
@@ -162,8 +162,8 @@ function calculate_ensemble_mean_cov_and_coeffnorm(
         for j in collect(1:repeats)
             l = lmat[:, i]
             m, v, c = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
-            means[:, i] += m' / repeats
-            covs[:, i] += v' / repeats
+            means[:, i] += m[1, :] / repeats
+            covs[:, i] += v[1, 1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
     end
@@ -175,7 +175,7 @@ end
 ## Begin Script, define problem setting
 println("Begin script")
 date_of_run = Date(2022, 9, 22)
-input_dim_list = [6]
+input_dim_list = [8]
 
 for input_dim in input_dim_list
     println("Number of input dimensions: ", input_dim)
@@ -397,11 +397,10 @@ for input_dim in input_dim_list
                 legend = :topleft,
                 label = "Target",
             )
-            println(mean(2 * sqrt.(pred_cov_slice)))
             plot!(
                 xrange,
                 pred_mean_slice',
-                ribbon = [2 * sqrt.(pred_cov_slice); 2 * sqrt.(pred_cov_slice)]',
+                ribbon = [2 * sqrt.(pred_cov_slice[1, 1, :]); 2 * sqrt.(pred_cov_slice[1, 1, :])]',
                 label = "Fourier",
                 color = "blue",
             )
