@@ -38,8 +38,8 @@ struct RandomFeatureMethod
     random_feature::RandomFeature
     "A dictionary specifying the batch sizes. Must contain \"train\", \"test\", and \"feature\" keys"
     batch_sizes::Dict
-    "A non-negative, additive regularization parameter used during the fit method in the linear solve"
-    regularization::Real
+    "A positive definite matrix used during the fit method to regularize the linear solve"
+    regularization::Union{UniformScaling, Matrix}
 end
 
 """
@@ -49,21 +49,28 @@ Basic constructor for a `RandomFeatureMethod`.
 """
 function RandomFeatureMethod(
     random_feature::RandomFeature;
-    regularization::Real = 1e12 * eps(),
+    regularization::Union{Real, Matrix, UniformScaling} = 1e12 * eps() * I,
     batch_sizes::Dict = Dict{AbstractString, Int}("train" => 0, "test" => 0, "feature" => 0),
 )
 
     if !all([key ∈ keys(batch_sizes) for key in ["train", "test", "feature"]])
         throw(ArgumentError("batch_sizes keys must contain all of \"train\", \"test\", and \"feature\""))
     end
-    if regularization < 0
-        @info "input regularization < 0 is invalid, using regularization = 1e12*eps()"
-        lambda = 1e12 * eps()
-    elseif regularization == 0
-        @warn "input regularization set to 0, it is recommended to increase lambda (else only a pseudo-inverse will be used for the linear solve)"
-        lambda = regularization
+    if isa(regularization, Real)
+        if regularization < 0
+            @info "input regularization < 0 is invalid, using regularization = 1e12*eps()"
+            lambda = 1e12 * eps() * I
+        else
+            lambda = regularization * I
+        end
     else
-        lambda = regularization
+        if !isposdef(regularization) #check positive definiteness
+            tr_scaled = abs(1.0 / get_output_dim(random_feature) * tr(regularization))
+            @warn "input regularization matrix is not positive definite, replacing with uniform scaling of size $(tr_scaled)"
+            lambda = tr_scaled * I
+        else
+            lambda = regularization
+        end
     end
 
     return RandomFeatureMethod(random_feature, batch_sizes, lambda)
@@ -171,13 +178,13 @@ function fit(
     PhiTY = reshape(PhiTY, n_features, 1, 1) # RHS kept as a 3-array (n_features x n_samples x dim_output)
 
     # solve the linear system
-    # (PhiTPhi + lambda * I) * beta = PhiTY
+    # (PhiTPhi + lambda ) * beta = PhiTY
 
     lambda = get_regularization(rfm)
     if lambda == 0
         feature_factors = Decomposition(PhiTPhi, "pinv")
     else
-        feature_factors = Decomposition(PhiTPhi + lambda * I, decomposition_type)
+        feature_factors = Decomposition(PhiTPhi + lambda, decomposition_type)
     end
     coeffs = linear_solve(feature_factors, PhiTY) #n_features x n_samples x dim_output
 
@@ -311,7 +318,7 @@ function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCont
     coeffs = get_coeffs(fit)
     PhiTPhi_reg_factors = get_feature_factors(fit)
     PhiTPhi_reg = get_full_matrix(PhiTPhi_reg_factors)
-    PhiTPhi = PhiTPhi_reg - lambda * I
+    PhiTPhi = PhiTPhi_reg - lambda
 
     output_dim = get_output_dim(rf)
     cov_outputs = zeros(output_dim, output_dim, size(inputs, 2))

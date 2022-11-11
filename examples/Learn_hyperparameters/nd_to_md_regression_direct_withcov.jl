@@ -31,6 +31,17 @@ seed = 2024
 ekp_seed = 99999
 rng = StableRNG(seed)
 
+function flat_to_chol(x::AbstractArray)
+    choldim = Int(floor(sqrt(2 * length(x))))
+    cholmat = zeros(choldim, choldim)
+    for i in 1:choldim
+        for j in 1:i
+            cholmat[i, j] = x[sum(0:(i - 1)) + j]
+        end
+    end
+    return cholmat
+end
+
 ## Functions of use
 function RFM_from_hyperparameters(
     rng::AbstractRNG,
@@ -45,28 +56,14 @@ function RFM_from_hyperparameters(
     # l = [input_dim params + output_dim params]
     μ_c = 0.0
 
-    if isa(l, Real)
-        σ_c = fill(l, input_dim)
-    elseif isa(l, AbstractVector)
-        if length(l) == 1
-            σ_c = fill(l[1], input_dim)
-        else
-            σ_c = l[1:input_dim]
-        end
-    end
-    if isa(l, Real)
-        σ_o = fill(l, output_dim)
-    elseif isa(l, AbstractVector)
-        if length(l) == 1
-            σ_o = fill(l[1], output_dim)
-        else
-            σ_o = l[(input_dim + 1):end]
-        end
-    end
+
+
+    cholU = flat_to_chol(l[1:Int(0.5 * input_dim * (input_dim + 1))])
+    cholV = flat_to_chol(l[(Int(0.5 * input_dim * (input_dim + 1)) + 1):end])
 
     M = zeros(input_dim, output_dim) # n x p mean
-    U = Diagonal(σ_c) # input covariance
-    V = Diagonal(σ_o) # output covariance
+    U = cholU * permutedims(cholU, (2, 1))
+    V = cholV * permutedims(cholV, (2, 1))
     dist = MatrixNormal(M, U, V)
     pd = ParameterDistribution(
         Dict(
@@ -218,37 +215,45 @@ end
 
 ## Begin Script, define problem setting
 println("Begin script")
-date_of_run = Date(2022, 11, 11)
+date_of_run = Date(2022, 11, 10)
 
 input_dim = 1
-output_dim = 2
+output_dim = 3
+println("Number of input dimensions: ", input_dim)
 println("Number of output dimensions: ", output_dim)
 
-function ftest_1d_to_2d(x::AbstractMatrix)
-    out = zeros(2, size(x, 2))
+function ftest_1d_to_3d(x::AbstractMatrix)
+    out = zeros(3, size(x, 2))
     out[1, :] = mapslices(column -> sin(norm([i * c for (i, c) in enumerate(column)])^2), x, dims = 1)
     out[2, :] = mapslices(column -> exp(-0.1 * norm([i * c for (i, c) in enumerate(column)])^2), x, dims = 1)
+    out[3, :] = mapslices(
+        column ->
+            norm([i * c for (i, c) in enumerate(column)]) * sin(1 / norm([i * c for (i, c) in enumerate(column)])^2) -
+            1,
+        x,
+        dims = 1,
+    )
     return out
 end
 
 #problem formulation
 n_data = 50
 x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
-noise_sd = 1e-1
+noise_sd = 5e-2
 lambda = noise_sd^2
-noise = rand(rng, Normal(0, noise_sd), (output_dim, n_data))
+noise = rand(rng, MvNormal(zeros(output_dim), noise_sd^2 * I), n_data)
 
-y = ftest_1d_to_2d(x) + noise
+y = ftest_1d_to_3d(x) + noise
 io_pairs = PairedDataContainer(x, y)
 
 ## Define Hyperpriors for EKP
 
-μ_l = 5.0
-σ_l = 10.0
+μ_l = 1.0
+σ_l = 1.0
 # prior for non radial problem
-prior_lengthscale = constrained_gaussian("lengthscale", μ_l, σ_l, 0.0, Inf, repeats = input_dim + output_dim)
+n_l = Int(0.5 * input_dim * (input_dim + 1)) + Int(0.5 * output_dim * (output_dim + 1))
+prior_lengthscale = constrained_gaussian("lengthscale", μ_l, σ_l, 0.0, Inf, repeats = n_l)
 priors = prior_lengthscale
-
 
 # estimate the noise from running many RFM sample costs at the mean values
 batch_sizes = Dict("train" => 600, "test" => 600, "feature" => 600)
@@ -265,13 +270,13 @@ CALC_TRUTH = true
 println("RHKS norm type: norm of coefficients")
 
 if CALC_TRUTH
-    sample_multiplier = 2
+    sample_multiplier = 1
 
     n_samples = (n_test * output_dim + 2) * sample_multiplier
     println("Estimating output covariance with ", n_samples, " samples")
     internal_Γ, approx_σ2 = estimate_mean_and_coeffnorm_covariance(
         rng,
-        repeat([μ_l], input_dim + output_dim), # take mean values
+        repeat([μ_l], n_l), # take mean values
         noise_sd,
         n_features,
         batch_sizes,
@@ -373,7 +378,7 @@ println("number of features: ", n_features_test)
 x_test = rand(rng, MvNormal(zeros(input_dim), 0.5 * I), n_data_test)
 noise_test = rand(rng, Normal(0, noise_sd), (output_dim, n_data_test))
 
-y_test = ftest_1d_to_2d(x_test) + noise_test
+y_test = ftest_1d_to_3d(x_test) + noise_test
 io_pairs_test = PairedDataContainer(x_test, y_test)
 
 # get feature distribution
@@ -383,6 +388,7 @@ println("Optimal lengthscales: $(final_lvec)")
 println("**********")
 
 μ_c = 0.0
+#=
 if size(final_lvec, 1) == 1
     σ_c = repeat([final_lvec[1, 1]], input_dim)
     σ_o = repeat([final_lvec[1, 1]], output_dim)
@@ -390,12 +396,16 @@ else
     σ_c = final_lvec[1:input_dim, 1]
     σ_o = final_lvec[(input_dim + 1):end, 1]
 end
+=#
 regularizer = noise_sd^2
 
 
+cholU = flat_to_chol(final_lvec[1:Int(0.5 * input_dim * (input_dim + 1)), 1])
+cholV = flat_to_chol(final_lvec[(Int(0.5 * input_dim * (input_dim + 1)) + 1):end, 1])
+
 M = zeros(input_dim, output_dim) # n x p mean
-U = Diagonal(σ_c) # input covariance
-V = Diagonal(σ_o) # output covariance
+U = cholU * permutedims(cholU, (2, 1))
+V = cholV * permutedims(cholV, (2, 1))
 dist = MatrixNormal(M, U, V)
 pd = ParameterDistribution(
     Dict(
@@ -414,20 +424,23 @@ fitted_features = fit(rfm, io_pairs_test, decomposition_type = "svd")
 
 if PLOT_FLAG
     # learning on Normal(0,1) dist, forecast on (-2,2)
-    xrange = reshape(collect(-2:0.02:2), 1, :)
+    xrange = reshape(collect(-2.01:0.02:2.01), 1, :)
 
-    yrange = ftest_1d_to_2d(xrange)
+    yrange = ftest_1d_to_3d(xrange)
 
     pred_mean_slice, pred_cov_slice = predict(rfm, fitted_features, DataContainer(xrange))
 
-    pred_cov_slice[1, 1, :] = max.(pred_cov_slice[1, 1, :], 0.0)
-    pred_cov_slice[2, 2, :] = max.(pred_cov_slice[2, 2, :], 0.0)#plot slice through one dimensions, others fixed to 0
+    for i in 1:output_dim
+        pred_cov_slice[i, i, :] = max.(pred_cov_slice[i, i, :], 0.0)
+    end
+
     figure_save_directory = joinpath(@__DIR__, "output", string(date_of_run))
     if !isdir(figure_save_directory)
         mkpath(figure_save_directory)
     end
 
     #plot diagonal
+
     xplot = xrange[:]
     plt = plot(
         xplot,
@@ -442,6 +455,16 @@ if PLOT_FLAG
     plot!(
         xplot,
         yrange[2, :],
+        show = false,
+        color = "black",
+        linewidth = 5,
+        size = (600, 600),
+        legend = :topleft,
+        label = "Target",
+    )
+    plot!(
+        xplot,
+        yrange[3, :],
         show = false,
         color = "black",
         linewidth = 5,
@@ -465,6 +488,14 @@ if PLOT_FLAG
         ribbon = [2 * sqrt.(pred_cov_slice[2, 2, :]); 2 * sqrt.(pred_cov_slice[2, 2, :])],
         label = "Fourier",
         color = "red",
+    )
+    scatter!(x_test[:], y_test[3, :], color = "green", label = "", marker = :x)
+    plot!(
+        xplot,
+        pred_mean_slice[3, :],
+        ribbon = [2 * sqrt.(pred_cov_slice[3, 3, :]); 2 * sqrt.(pred_cov_slice[3, 3, :])],
+        label = "Fourier",
+        color = "green",
     )
 
     savefig(plt, joinpath(figure_save_directory, "Fit_and_predict_1D_to_MD.pdf"))
