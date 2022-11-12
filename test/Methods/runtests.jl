@@ -37,11 +37,19 @@ seed = 2023
         batch_sizes = Dict("train" => 100, "test" => 100, "feature" => 100)
         lambda_warn = -1
         lambda = 1e-4
-
+        lambdamat_warn = ones(3, 3) # not pos def
+        L = [0.5 0; 1.3 0.3]
+        lambdamat = L * permutedims(L, (2, 1)) #pos def
         @test_throws ArgumentError RandomFeatureMethod(sff, regularization = lambda, batch_sizes = batch_sizes_err)
 
         rfm_warn = RandomFeatureMethod(sff, regularization = lambda_warn, batch_sizes = batch_sizes)
-        @test get_regularization(rfm_warn) ≈ 1e12 * eps()
+        @test get_regularization(rfm_warn) ≈ 1e12 * eps() * I
+
+        rfm_warn2 = RandomFeatureMethod(sff, regularization = lambdamat_warn, batch_sizes = batch_sizes)
+        @test get_regularization(rfm_warn2) ≈ abs(1.0 / get_output_dim(sff) * tr(lambdamat_warn)) * I
+
+        rfm = RandomFeatureMethod(sff, regularization = lambdamat, batch_sizes = batch_sizes)
+        @test get_regularization(rfm) ≈ lambdamat
 
         rfm = RandomFeatureMethod(sff, regularization = lambda, batch_sizes = batch_sizes)
 
@@ -52,7 +60,7 @@ seed = 2023
         rfm_default = RandomFeatureMethod(sff)
 
         @test get_batch_sizes(rfm_default) == Dict("train" => 0, "test" => 0, "feature" => 0)
-        @test get_regularization(rfm_default) ≈ 1e12 * eps()
+        @test get_regularization(rfm_default) ≈ 1e12 * eps() * I
     end
 
     @testset "Fit and predict: 1D -> 1D" begin
