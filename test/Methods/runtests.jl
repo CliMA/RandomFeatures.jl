@@ -63,7 +63,7 @@ seed = 2023
         @test get_regularization(rfm_default) ≈ 1e12 * eps() * I
     end
 
-    @testset "Fit and predict: 1D -> 1D" begin
+    @testset "Fit and predict: 1-D -> 1-D" begin
         rng_base = StableRNG(seed)
 
         # looks like a 4th order polynomial near 0, then is damped to 0 toward +/- inf
@@ -243,7 +243,7 @@ seed = 2023
     end # testset "Fit and predict"
 
 
-    @testset "Fit and predict: N-D -> 1-D" begin
+    @testset "Fit and predict: d-D -> 1-D" begin
 
         rng = StableRNG(seed + 1)
         input_dim = 6
@@ -344,13 +344,13 @@ seed = 2023
                 )
                 savefig(
                     plt,
-                    joinpath(@__DIR__, "Fit_and_predict_ND_" * string(direction) * "of" * string(input_dim) * ".pdf"),
+                    joinpath(@__DIR__, "Fit_and_predict_d-D_" * string(direction) * "of" * string(input_dim) * ".pdf"),
                 )
             end
         end
     end
 
-    @testset "Fit and predict: 1-D -> M-D" begin
+    @testset "Fit and predict: 1-D -> p-D" begin
         rng = StableRNG(seed + 2)
         input_dim = 1
         output_dim = 2

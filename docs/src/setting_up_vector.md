@@ -1,6 +1,6 @@
-# Setting up a Random Feature Method
+# Setting up a Vector Random Feature Method
 
-A basic creation of sigmoid-based random feature method is given as:
+A basic creation of vector-valued Fourier-based random feature method is given as:
 
 ```julia
 # user inputs required:
@@ -9,8 +9,8 @@ A basic creation of sigmoid-based random feature method is given as:
 # number of features       - n_features::Int
 
 feature_sampler = FeatureSampler(pd) 
-sigmoid_sf = ScalarFeature(n_features, feature_sampler, Sigmoid()) 
-rfm = RandomFeatureMethod(sigmoid_sf)
+fourier_vf = VectorFourierFeature(n_features, feature_sampler) 
+rfm = RandomFeatureMethod(fourier_vf)
 fitted_features = fit(rfm, io_pairs)
 ```
 Prediction at new inputs are made with
@@ -18,18 +18,18 @@ Prediction at new inputs are made with
 # user inputs required
 # new test inputs - i_test::DataContainer
 
-predicted_mean, predicted_var = predict(rfm, fitted_features, i_test)
+predicted_mean, predicted_cov = predict(rfm, fitted_features, i_test)
 ```
 We see the core objects
 - [`ParameterDistribution`](https://clima.github.io/EnsembleKalmanProcesses.jl/stable/parameter_distributions/): a flexible container for constructing constrained parameter distributions, (from [`EnsembleKalmanProcesses.jl`](https://clima.github.io/EnsembleKalmanProcesses.jl/stable/))
 - [`(Paired)DataContainer`](https://clima.github.io/EnsembleKalmanProcesses.jl/stable/internal_data_representation): consistent storage objects for input-output pairs or just inputs, (from [`EnsembleKalmanProcesses.jl`](https://clima.github.io/EnsembleKalmanProcesses.jl/stable))
 - `FeatureSampler`: Builds the random feature distributions from a parameter distribution
-- `ScalarFeature`: Builds a feature from the random feature distributions
+- `VectorFourierFeature`: Special constructor of a Cosine-based `VectorFeature` from the random feature distributions
 - `RandomFeatureMethod`: Sets up the learning problem (with e.g. batching, regularization)
 - `Fit`: Stores fitted features from the `fit` method
 
 !!! note "See some examples!"
-    Running the [test suite](@ref test-suite) with `TEST_PLOT_FLAG = true` will produce some ``1D\to 1D`` and ``ND \to 1D`` example fits produced by [`test/Methods/runtests.jl`](https://github.com/CliMA/RandomFeatures.jl/tree/main/test/Methods). These use realistic optional arguments and distributions.
+    Running the [test suite](@ref test-suite) with `TEST_PLOT_FLAG = true` produces a ``1``-D``\to p``-D example produced by [`test/Methods/runtests.jl`](https://github.com/CliMA/RandomFeatures.jl/tree/main/test/Methods). These use realistic optional arguments and distributions.
 
 ## `ParameterDistributions`
 
@@ -46,16 +46,19 @@ The easiest constructors are for univariate and products
 one_dim_pd = constrained_gaussian("xi", 10, 5, -Inf, Inf) # Normal distribution
 five_dim_pd = constrained_gaussian("xi", 10, 5, 0, Inf, repeats = 5) # Log-normal (approx mean 10 & approx std 5) in each of the five dimensions
 ```
-#### Simple multivariate distribution
+#### Simple matrixvariate distribution
 Simple unconstrained distribution is created as follows. 
 ```julia
 using Distributions
+d = 2
+p = 5
+M = zeros(d,p)
+U = Diagonal(ones(d))
+V = SymTridiagonal(2 * ones(p), ones(p - 1))
 
-μ = zeros(3)
-Σ = SymTridiagonal(2 * ones(3), 1 * ones(2))
-three_dim_pd = ParameterDistribution(
-    Dict("distribution" => Parameterized(MvNormal(μ,Σ)), # the distribution
-         "constraint" => repeat([no_constraint()],3), # constraints 
+two_by_five_dim_pd = ParameterDistribution(
+    Dict("distribution" => Parameterized(MatrixNormal(M, U, V)), # the distribution
+         "constraint" => repeat([no_constraint()], d * p), # flattened constraints 
          "name" => "xi",
       ),
 )
@@ -67,39 +70,42 @@ three_dim_pd = ParameterDistribution(
     Combined distributions can be made using the `VectorOfParameterized`, or histogram-based distributions with `Samples`. Extensive documentation of distributions and constraints is found [`here`](https://clima.github.io/EnsembleKalmanProcesses.jl/stable/parameter_distributions/).
 
 ## `Sampler`
-The random feature distribution ``\mathcal{D}`` is built of two distributions, the user-provided ``\mathcal{D}_\xi`` (`"xi"`) and a uniform distribution (`"uniform"`). 
+The random feature distribution ``\mathcal{D}`` is built of two distributions, the user-provided ``\mathcal{D}_\Xi`` (`"xi"`) and a bias distribution (`"bias"`). The bias distribution is p-dimensional, and commonly uniformly distributed, so we provide an additional constructor for this case
 
 ```math
-\theta = (\xi,b) \sim \mathcal{D} = (\mathcal{D}_\xi, \mathcal{U}([c_\ell,c_u]))
+\theta = (\Xi,B) \sim \mathcal{D} = (\mathcal{D}_\Xi, \mathcal{U}([c_\ell,c_u]^p))
 ```
 Defaults ``c_\ell = 0, c_u = 2\pi``. In the code this is built as
 ```julia
 sampler = FeatureSampler(
-    parameter_distribution;
+    parameter_distribution,
+    output_dim;
     uniform_shift_bounds = [0,2*π],
     rng = Random.GLOBAL_RNG
 )
 ```
- A random number generator can be provided.
+ A random number generator can be provided. The second argument can be replaced with a general ``p``-D `ParameterDistribution` with a name-field `"bias"`.
 
-## Features: `ScalarFeature` ``ND \to 1D``
+## Features: `VectorFeature` ``d``-D ``\to p``-D
 
-Given ``x\in\mathbb{R}^n`` input data, and ``m`` (`n_features`) features, `Features` produces samples of
+Given ``x\in\mathbb{R}^n`` input data, and ``m`` features, `Features` produces samples of
 ```math
-\Phi(x;\theta_j) = \sigma f(\xi_j\cdot x + b_j),\qquad \theta_j=(\xi_j,b_j) \sim \mathcal{D}\qquad \mathrm{for}\ j=1,\dots,m 
+(\Phi(x;\theta_j))_\ell = (\sigma f(\Xi_j x + B_j))_\ell,\qquad \theta_j=(\Xi_j,B_j) \sim \mathcal{D}\qquad \mathrm{for}\ j=1,\dots,m \ \text{and} \ \ell=1,\dots,p.
 ```
-``f`` chosen as a cosine produces fourier features
+Note that ``\Phi \in \mathbb{R}^{n,m,p}``.  Choosing ``f`` as a cosine produces fourier features
 ```julia
-sf = ScalarFourierFeature(
+vf = VectorFourierFeature(
     n_features,
+    output_dim,
     sampler;
     kwargs...
 ) 
 ```
 ``f`` as a neuron activation produces a neuron feature (`ScalarActivation` listed [here](@ref scalar-functions)) 
 ```julia
-sf = ScalarNeuronFeature(
+vf = VectorNeuronFeature(
     n_features,
+    output_dim,
     sampler;
     activation_fun = Relu(),
     kwargs...
@@ -109,16 +115,16 @@ The keyword `feature_parameters = Dict("sigma" => a)`, can be included to set th
 
 ## Method
 
-The `RandomFeatureMethod` sets up the training problem to learn coefficients ``\beta\in\mathbb{R}^m`` from input-output training data ``(x,y)=\{(x_i,y_i)\}_{i=1}^n`` and parameters ``\theta = \{\theta_j\}_{j=1}^m``:
+The `RandomFeatureMethod` sets up the training problem to learn coefficients ``\beta\in\mathbb{R}^m`` from input-output training data ``(x,y)=\{(x_i,y_i)\}_{i=1}^n``, ``y_i \in \mathbb{R}^p``  and parameters ``\theta = \{\theta_j\}_{j=1}^m``. In Einstein summation notation the method solves the following system
 ```math
-(\frac{1}{m}\Phi^T(x;\theta) \Phi(x;\theta) + \lambda I) \beta = \Phi^T(x;\theta)y
+(\frac{1}{m}\Phi_{n,i,p}(x;\theta) \Phi_{n,j,p}(x;\theta) + \Phi_{n,i,p}\Lambda_{p,q,n,m}\Phi^*_{m,j,q}) \beta_j = \Phi(x;\theta)_{n,i,p}y_{n,p}
 ```
-Where ``\lambda`` is a regularization.
+Where ``\Lambda = \lambda \otimes I_{n\times n}`` is defined by a user-provided `p-by-p` positive-definite regularization matrix ``\lambda``. ``\Phi^*`` is defined through ``\Phi_{n,i,p} \Phi^*_{n,j,p} = \delta_{i,j}``. If ``\lambda`` is provided as a constant or diagonal, then this term reduces to ``\lambda I_{m \times m}`` or ``\lambda \otimes I_{m \times m}``.
 ```julia
 rfm = RandomFeatureMethod(
-    sf;
-    regularization = 1e12 * eps(),
-    batch_sizes::Dict = Dict{AbstractString, Int}("train" => 0, "test" => 0, "feature" => 0),
+    vf;
+    regularization = 1e12 * eps() * I,
+    batch_sizes = ("train" => 0, "test" => 0, "feature" => 0),
 )
 ```
 One can select batch sizes to balance the space-time (memory-process) trade-off. when building and solving equations by setting values of `"train"`, test data `"test"` and number of features `"feature"`. The default is no batching (`0`).
@@ -136,6 +142,9 @@ fitted_features = fit(
 )
 ```
 The decomposition is based off the [`LinearAlgebra.factorize`](https://docs.julialang.org/en/v1/stdlib/LinearAlgebra/#man-linalg-factorizations) functions. The string must match the function name (e.g. `"qr"` `"cholesky"`). This specialization can accelerate the linear solvers.
+
+
+
 
 ## Hyperparameters
 
