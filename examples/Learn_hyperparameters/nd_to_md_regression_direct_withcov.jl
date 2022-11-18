@@ -72,7 +72,7 @@ function RFM_from_hyperparameters(
             "name" => "xi",
         ),
     )
-    feature_sampler = FeatureSampler(pd, output_dim, rng = copy(rng))
+    feature_sampler = FeatureSampler(pd, output_dim, rng = rng)
     vff = VectorFourierFeature(n_features, output_dim, feature_sampler)
 
     return RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = lambda)
@@ -145,6 +145,7 @@ function estimate_mean_and_coeffnorm_covariance(
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
     end
+
     blockcovmat = zeros(n_samples, n_test * output_dim, n_test * output_dim)
     blockmeans = zeros(n_test * output_dim, n_samples)
     for i in 1:n_test
@@ -196,6 +197,7 @@ function calculate_ensemble_mean_and_coeffnorm(
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
         end
     end
+
     blockcovmat = zeros(N_ens, n_test * output_dim, n_test * output_dim)
     blockmeans = zeros(n_test * output_dim, N_ens)
     for i in 1:n_test
@@ -239,7 +241,7 @@ end
 #problem formulation
 n_data = 50
 x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
-noise_sd = 5e-2
+noise_sd = 3e-2
 lambda = noise_sd^2
 noise = rand(rng, MvNormal(zeros(output_dim), noise_sd^2 * I), n_data)
 
@@ -294,11 +296,10 @@ end
 
 Γ = internal_Γ
 Γ[1:(n_test * output_dim), 1:(n_test * output_dim)] += approx_σ2
-#    Γ[(n_test + 1):(2 * n_test), (n_test + 1):(2 * n_test)] += I
 Γ[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
 println(
     "Estimated variance. Tr(cov) = ",
-    tr(Γ[1:n_test, 1:n_test]),
+    tr(Γ[1:(n_test * output_dim), 1:(n_test * output_dim)]),
     " + ",
     tr(Γ[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end]),
 )
@@ -341,7 +342,6 @@ for i in 1:N_iter
         )
         Γ_new = internal_Γ_new
         Γ_new[1:(n_test * output_dim), 1:(n_test * output_dim)] += approx_σ2_new
-        #            Γ_new[(n_test + 1):(2 * n_test), (n_test + 1):(2 * n_test)] += I
         Γ_new[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
         println(
             "Estimated variance. Tr(cov) = ",
@@ -414,7 +414,7 @@ pd = ParameterDistribution(
         "name" => "xi",
     ),
 )
-feature_sampler = FeatureSampler(pd, output_dim, rng = copy(rng))
+feature_sampler = FeatureSampler(pd, output_dim, rng = rng)
 vff = VectorFourierFeature(n_features, output_dim, feature_sampler)
 
 #second case with batching

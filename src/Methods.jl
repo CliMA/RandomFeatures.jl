@@ -69,6 +69,7 @@ function RandomFeatureMethod(
             @warn "input regularization matrix is not positive definite, replacing with uniform scaling of size $(tr_scaled)"
             lambda = tr_scaled * I
         else
+
             lambda = regularization
         end
     end
@@ -181,7 +182,8 @@ function fit(
     # (PhiTPhi + lambda ) * beta = PhiTY
 
     lambda = get_regularization(rfm)
-    if lambda == 0
+
+    if lambda == 0 * I
         feature_factors = Decomposition(PhiTPhi, "pinv")
     else
         feature_factors = Decomposition(PhiTPhi + lambda, decomposition_type)
