@@ -46,7 +46,7 @@ end
 function RFM_from_hyperparameters(
     rng::AbstractRNG,
     l::Union{Real, AbstractVecOrMat},
-    regularizer::Real,
+    lambda,
     n_features::Int,
     batch_sizes::Dict,
     input_dim::Int,
@@ -82,13 +82,12 @@ end
 function calculate_mean_cov_and_coeffs(
     rng::AbstractRNG,
     l::Union{Real, AbstractVecOrMat},
-    noise_sd::Real,
+    lambda,
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer,
 )
 
-    regularizer = noise_sd^2
     n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
     n_test = size(get_inputs(io_pairs), 2) - n_train
 
@@ -102,7 +101,7 @@ function calculate_mean_cov_and_coeffs(
     output_dim = size(otrain, 1)
 
     # build and fit the RF
-    rfm = RFM_from_hyperparameters(rng, l, regularizer, n_features, batch_sizes, input_dim, output_dim)
+    rfm = RFM_from_hyperparameters(rng, l, lambda, n_features, batch_sizes, input_dim, output_dim)
     fitted_features = fit(rfm, io_train_cost, decomposition_type = "svd")
 
     test_batch_size = get_batch_size(rfm, "test")
@@ -121,7 +120,7 @@ end
 function estimate_mean_and_coeffnorm_covariance(
     rng::AbstractRNG,
     l::Union{Real, AbstractVecOrMat},
-    noise_sd::Real,
+    lambda,
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer,
@@ -136,7 +135,7 @@ function estimate_mean_and_coeffnorm_covariance(
     coeffl2norm = zeros(1, n_samples)
     for i in 1:n_samples
         for j in 1:repeats
-            m, v, c = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
+            m, v, c = calculate_mean_cov_and_coeffs(rng, l, lambda, n_features, batch_sizes, io_pairs)
             # m output_dim x n_test
             # v output_dim x output_dim x n_test
             # c n_features
@@ -166,7 +165,7 @@ end
 function calculate_ensemble_mean_and_coeffnorm(
     rng::AbstractRNG,
     lvecormat::AbstractVecOrMat,
-    noise_sd::Real,
+    lambda,
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer;
@@ -188,7 +187,7 @@ function calculate_ensemble_mean_and_coeffnorm(
     for i in collect(1:N_ens)
         for j in collect(1:repeats)
             l = lmat[:, i]
-            m, v, c = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
+            m, v, c = calculate_mean_cov_and_coeffs(rng, l, lambda, n_features, batch_sizes, io_pairs)
             # m output_dim x n_test
             # v output_dim x output_dim x n_test
             # c n_features
@@ -241,9 +240,21 @@ end
 #problem formulation
 n_data = 50
 x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
-noise_sd = 3e-2
-lambda = noise_sd^2
-noise = rand(rng, MvNormal(zeros(output_dim), noise_sd^2 * I), n_data)
+
+# diagonal noise
+#cov_mat = Diagonal((5e-2)^2*ones(output_dim))
+#cov_mat = (5e-2)^2*I
+# correlated noise
+cov_mat = Tridiagonal((5e-3) * ones(2), (2e-2) * ones(3), (5e-3) * ones(2))
+
+noise_dist = MvNormal(zeros(output_dim), cov_mat)
+noise = rand(rng, noise_dist, n_data)
+
+# simple regularization
+#lambda = tr(cov_mat)/output_dim
+# more complex
+lambda = cov_mat
+
 
 y = ftest_1d_to_3d(x) + noise
 io_pairs = PairedDataContainer(x, y)
@@ -279,7 +290,7 @@ if CALC_TRUTH
     internal_Γ, approx_σ2 = estimate_mean_and_coeffnorm_covariance(
         rng,
         repeat([μ_l], n_l), # take mean values
-        noise_sd,
+        lambda,
         n_features,
         batch_sizes,
         io_pairs,
@@ -324,7 +335,7 @@ for i in 1:N_iter
     #get parameters:
     lvec = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
     g_ens, _ =
-        calculate_ensemble_mean_and_coeffnorm(rng, lvec, noise_sd, n_features, batch_sizes, io_pairs, repeats = repeats)
+        calculate_ensemble_mean_and_coeffnorm(rng, lvec, lambda, n_features, batch_sizes, io_pairs, repeats = repeats)
 
     if i % update_cov_step == 0 # one update to the 
 
@@ -333,7 +344,7 @@ for i in 1:N_iter
         internal_Γ_new, approx_σ2_new = estimate_mean_and_coeffnorm_covariance(
             rng,
             mean(constrained_u, dims = 2)[:, 1], # take mean values
-            noise_sd,
+            lambda,
             n_features,
             batch_sizes,
             io_pairs,
@@ -376,7 +387,7 @@ n_features_test = Int(floor(1.2 * n_data_test))
 println("number of training data: ", n_data_test)
 println("number of features: ", n_features_test)
 x_test = rand(rng, MvNormal(zeros(input_dim), 0.5 * I), n_data_test)
-noise_test = rand(rng, Normal(0, noise_sd), (output_dim, n_data_test))
+noise_test = rand(rng, noise_dist, n_data_test)
 
 y_test = ftest_1d_to_3d(x_test) + noise_test
 io_pairs_test = PairedDataContainer(x_test, y_test)
@@ -397,7 +408,6 @@ else
     σ_o = final_lvec[(input_dim + 1):end, 1]
 end
 =#
-regularizer = noise_sd^2
 
 
 cholU = flat_to_chol(final_lvec[1:Int(0.5 * input_dim * (input_dim + 1)), 1])
@@ -419,12 +429,12 @@ vff = VectorFourierFeature(n_features, output_dim, feature_sampler)
 
 #second case with batching
 
-rfm = RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = regularizer)
+rfm = RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = lambda)
 fitted_features = fit(rfm, io_pairs_test, decomposition_type = "svd")
 
 if PLOT_FLAG
     # learning on Normal(0,1) dist, forecast on (-2,2)
-    xrange = reshape(collect(-2.01:0.02:2.01), 1, :)
+    xrange = reshape(collect(-1.51:0.02:1.51), 1, :)
 
     yrange = ftest_1d_to_3d(xrange)
 

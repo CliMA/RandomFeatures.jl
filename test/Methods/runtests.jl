@@ -350,138 +350,212 @@ seed = 2023
         end
     end
 
-    @testset "Fit and predict: 1-D -> p-D" begin
+    @testset "Fit and predict: 1-D -> M-D" begin
         rng = StableRNG(seed + 2)
         input_dim = 1
-        output_dim = 2
+        output_dim = 3
         n_features = 100
-        function ftest_1d_to_2d(x::AbstractMatrix)
-            out = zeros(2, size(x, 2))
+        function ftest_1d_to_3d(x::AbstractMatrix)
+            out = zeros(3, size(x, 2))
             out[1, :] = mapslices(column -> sin(norm([i * c for (i, c) in enumerate(column)])^2), x, dims = 1)
             out[2, :] = mapslices(column -> exp(-0.1 * norm([i * c for (i, c) in enumerate(column)])^2), x, dims = 1)
+            out[3, :] = mapslices(
+                column ->
+                    norm([i * c for (i, c) in enumerate(column)]) * sin(1 / norm([i * c for (i, c) in enumerate(column)])^2) -
+                    1,
+                x,
+                dims = 1,
+            )
             return out
         end
 
+        #utility
+        function flat_to_chol(x::AbstractArray)
+            choldim = Int(floor(sqrt(2 * length(x))))
+            cholmat = zeros(choldim, choldim)
+            for i in 1:choldim
+                for j in 1:i
+                    cholmat[i, j] = x[sum(0:(i - 1)) + j]
+                end
+            end
+            return cholmat
+        end
         #problem formulation
-        n_data = 50
+        n_data = 100
         x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
-        noise_sd = 1e-1
-        lambda = noise_sd^2
-        noise = rand(rng, Normal(0, noise_sd), (output_dim, n_data))
 
-        y = ftest_1d_to_2d(x) + noise
-        io_pairs = PairedDataContainer(x, y)
-
-        n_test = 200
-        xtestvec = rand(rng, MvNormal(zeros(input_dim), I), n_test)
-
-        xtest = DataContainer(xtestvec)
-        ytest_nonoise = ftest_1d_to_2d(get_data(xtest))
-
-        # numbers from examples/hyperparameter_learning/nd_to_md_regression_direct_withcov.jl
-        M = zeros(input_dim, output_dim)
-        U = Diagonal([0.9634446604994962])
-        V = Diagonal([4.681506805674389, 1.7898435955588452])
-
-
-        dist = MatrixNormal(M, U, V) #produces matrix samples
-        pd = ParameterDistribution(
-            Dict(
-                "distribution" => Parameterized(dist),
-                "constraint" => repeat([no_constraint()], input_dim * output_dim),
-                "name" => "xi",
+        # run three sims, one with diagonal noise, one with multivariate using ID reg, one with multivariate using cov reg.
+        # use learnt hyperparameters from nd_to_md_regression_direct_withcov.jl
+        exp_names = ["diagonal", "correlated"]
+        cov_mats = [
+            Diagonal((5e-2)^2 * ones(output_dim)),
+            convert(
+                Matrix,
+                Tridiagonal((5e-3) * ones(output_dim - 1), (2e-2) * ones(output_dim), (5e-3) * ones(output_dim - 1)),
             ),
-        )
-        feature_sampler = FeatureSampler(pd, output_dim, rng = copy(rng))
-        vff = VectorFourierFeature(n_features, output_dim, feature_sampler)
+            convert(
+                Matrix,
+                Tridiagonal((5e-3) * ones(output_dim - 1), (2e-2) * ones(output_dim), (5e-3) * ones(output_dim - 1)),
+            ),
+        ]
+        lambdas = [n_data * tr(cov_mats[1]) / output_dim, cov_mats[2]] #n_data * tr(cov_mats[2]) / output_dim]
 
-        batch_sizes = Dict("train" => 500, "test" => 500, "feature" => 500)
-        rfm_batch = RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = lambda)
-        fitted_batched_features = fit(rfm_batch, io_pairs)
+        Us = [Diagonal([1.1434728362846716]), Diagonal([0.8443449281521409])]
+        cholV1 = flat_to_chol([
+            1.676512094735328,
+            0.5191322782406398,
+            0.6826859416721992,
+            0.3424593882293879,
+            0.2254132846804566,
+            0.9868781033464709,
+        ])
+        cholV2 = flat_to_chol([
+            1.1664270009749094,
+            0.7154452855148773,
+            0.6338465549623832,
+            0.5159564451488646,
+            0.34546610409778955,
+            0.9788183114171017,
+        ])
 
-        # test prediction L^2 error of mean
-        prior_mean, prior_cov = predict_prior(rfm_batch, xtest) # predict inputs from unfitted features
-        #  2 x n,  2 x 2 x n
-        priorL2err = sqrt.(sum((ytest_nonoise - prior_mean) .^ 2))
-        priorweightedL2err = [0.0]
-        for i in 1:n_test
-            diff = reshape(ytest_nonoise[:, i] - prior_mean[:, i], :, 1)
-            priorweightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(prior_cov[:, :, i]) * diff)
-        end
-        priorweightedL2err = sqrt.(priorweightedL2err)[:]
-        println("Prior for 1d->2d")
-        println("L2 error: ", priorL2err)
-        #        println("weighted L2 error: ", priorweightedL2err)
+        Vs = [cholV1 * permutedims(cholV1, (2, 1)), cholV2 * permutedims(cholV2, (2, 1))]
 
-        pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
-        L2err = sqrt.(sum((ytest_nonoise - pred_mean) .^ 2))
-        weightedL2err = [0.0]
-        for i in 1:n_test
-            diff = reshape(ytest_nonoise[:, i] - pred_mean[:, i], :, 1)
-            weightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(pred_cov[:, :, i]) * diff)
-        end
-        weightedL2err = sqrt.(weightedL2err)[:]
-        println("Posterior for 1d->2d")
-        println("L2 error: ", L2err)
-        #        println("weighted L2 error: ", weightedL2err)
+        for (cov_mat, lambda, U, V, exp_name) in zip(cov_mats, lambdas, Us, Vs, exp_names)
 
-        @test L2err < priorL2err
-        #        @test weightedL2err < priorweightedL2err
+            noise_dist = MvNormal(zeros(output_dim), cov_mat)
+            noise = rand(rng, noise_dist, n_data)
 
+            y = ftest_1d_to_3d(x) + noise
+            io_pairs = PairedDataContainer(x, y)
 
-        if TEST_PLOT_FLAG
-            # learning on Normal(0,1) dist, forecast on (-2,2)
-            xrange = reshape(collect(-2:0.02:2), 1, :)
+            n_test = 200
+            #            xtestvec = rand(rng, MvNormal(zeros(input_dim), I), n_test)
+            xtestvec = rand(rng, Uniform(-1.8, 1.8), (1, n_test))
 
-            yrange = ftest_1d_to_2d(xrange)
+            xtest = DataContainer(xtestvec)
+            ytest_nonoise = ftest_1d_to_3d(get_data(xtest))
 
-            pred_mean_slice, pred_cov_slice = predict(rfm_batch, fitted_batched_features, DataContainer(xrange))
+            # numbers from examples/hyperparameter_learning/nd_to_md_regression_direct_withcov.jl
+            M = zeros(input_dim, output_dim)
 
-            pred_cov_slice[1, 1, :] = max.(pred_cov_slice[1, 1, :], 0.0)
-            pred_cov_slice[2, 2, :] = max.(pred_cov_slice[2, 2, :], 0.0)
-
-            #plot diagonal
-            xplot = xrange[:]
-            plt = plot(
-                xplot,
-                yrange[1, :],
-                show = false,
-                color = "black",
-                linewidth = 5,
-                size = (600, 600),
-                legend = :topleft,
-                label = "Target",
+            dist = MatrixNormal(M, U, V) #produces matrix samples
+            pd = ParameterDistribution(
+                Dict(
+                    "distribution" => Parameterized(dist),
+                    "constraint" => repeat([no_constraint()], input_dim * output_dim),
+                    "name" => "xi",
+                ),
             )
-            plot!(
-                xplot,
-                yrange[2, :],
-                show = false,
-                color = "black",
-                linewidth = 5,
-                size = (600, 600),
-                legend = :topleft,
-                label = "Target",
-            )
-            println(y[1, :])
-            scatter!(x[:], y[1, :], color = "blue", label = "", marker = :x)
+            feature_sampler = FeatureSampler(pd, output_dim, rng = copy(rng))
+            vff = VectorFourierFeature(n_features, output_dim, feature_sampler)
 
-            plot!(
-                xplot,
-                pred_mean_slice[1, :],
-                ribbon = [2 * sqrt.(pred_cov_slice[1, 1, :]); 2 * sqrt.(pred_cov_slice[1, 1, :])],
-                label = "Fourier",
-                color = "blue",
-            )
-            scatter!(x[:], y[2, :], color = "red", label = "", marker = :x)
-            plot!(
-                xplot,
-                pred_mean_slice[2, :],
-                ribbon = [2 * sqrt.(pred_cov_slice[2, 2, :]); 2 * sqrt.(pred_cov_slice[2, 2, :])],
-                label = "Fourier",
-                color = "red",
-            )
+            batch_sizes = Dict("train" => 500, "test" => 500, "feature" => 500)
+            rfm_batch = RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = lambda)
+            fitted_batched_features = fit(rfm_batch, io_pairs)
 
-            savefig(plt, joinpath(@__DIR__, "Fit_and_predict_1D_to_2D.pdf"))
+            # test prediction L^2 error of mean
+            prior_mean, prior_cov = predict_prior(rfm_batch, xtest) # predict inputs from unfitted features
+            #  2 x n,  2 x 2 x n
+            priorL2err = sqrt.(sum((ytest_nonoise - prior_mean) .^ 2))
+            priorweightedL2err = [0.0]
+            for i in 1:n_test
+                diff = reshape(ytest_nonoise[:, i] - prior_mean[:, i], :, 1)
+                priorweightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(prior_cov[:, :, i]) * diff)
+            end
+            priorweightedL2err = sqrt.(priorweightedL2err)[:]
+            println("Prior for 1d->3d")
+            println("L2 error: ", priorL2err)
+            #        println("weighted L2 error: ", priorweightedL2err)
+
+            pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
+            #println(pred_mean)
+            L2err = sqrt.(sum((ytest_nonoise - pred_mean) .^ 2))
+            weightedL2err = [0.0]
+            for i in 1:n_test
+                diff = reshape(ytest_nonoise[:, i] - pred_mean[:, i], :, 1)
+                #                weightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(pred_cov[:, :, i]) * diff)
+            end
+            #            weightedL2err = sqrt.(weightedL2err)[:]
+            println("Posterior for 1d->3d")
+            println("L2 error: ", L2err)
+            #            println("weighted L2 error: ", weightedL2err)
+
+            #@test L2err < priorL2err
+            #        @test weightedL2err < priorweightedL2err
+
+
+            if TEST_PLOT_FLAG
+                # learning on Normal(0,1) dist, forecast on (-1.8,1.8)
+                # NB lamda=cov does very poorly outside good data.
+                xrange = reshape(collect(-1.81:0.02:1.81), 1, :)
+
+                yrange = ftest_1d_to_3d(xrange)
+
+                pred_mean_slice, pred_cov_slice = predict(rfm_batch, fitted_batched_features, DataContainer(xrange))
+
+                for i in 1:output_dim
+                    pred_cov_slice[i, i, :] = max.(pred_cov_slice[i, i, :], 0.0)
+                end
+                #plot diagonal
+                xplot = xrange[:]
+                plt = plot(
+                    xplot,
+                    yrange[1, :],
+                    show = false,
+                    color = "black",
+                    linewidth = 5,
+                    size = (600, 600),
+                    legend = :topleft,
+                    label = "Target",
+                )
+                plot!(
+                    xplot,
+                    yrange[2, :],
+                    show = false,
+                    color = "black",
+                    linewidth = 5,
+                    size = (600, 600),
+                    legend = :topleft,
+                    label = "Target",
+                )
+                plot!(
+                    xplot,
+                    yrange[3, :],
+                    show = false,
+                    color = "black",
+                    linewidth = 5,
+                    size = (600, 600),
+                    legend = :topleft,
+                    label = "Target",
+                )
+                scatter!(x[:], y[1, :], color = "blue", label = "", marker = :x)
+
+                plot!(
+                    xplot,
+                    pred_mean_slice[1, :],
+                    ribbon = [2 * sqrt.(pred_cov_slice[1, 1, :]); 2 * sqrt.(pred_cov_slice[1, 1, :])],
+                    label = "Fourier",
+                    color = "blue",
+                )
+                scatter!(x[:], y[2, :], color = "red", label = "", marker = :x)
+                plot!(
+                    xplot,
+                    pred_mean_slice[2, :],
+                    ribbon = [2 * sqrt.(pred_cov_slice[2, 2, :]); 2 * sqrt.(pred_cov_slice[2, 2, :])],
+                    label = "Fourier",
+                    color = "red",
+                )
+                scatter!(x[:], y[3, :], color = "green", label = "", marker = :x)
+                plot!(
+                    xplot,
+                    pred_mean_slice[3, :],
+                    ribbon = [2 * sqrt.(pred_cov_slice[3, 3, :]); 2 * sqrt.(pred_cov_slice[3, 3, :])],
+                    label = "Fourier",
+                    color = "green",
+                )
+
+                savefig(plt, joinpath(@__DIR__, "Fit_and_predict_1D_to_3D_" * exp_name * ".pdf"))
+            end
         end
     end
 
