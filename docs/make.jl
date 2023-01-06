@@ -18,9 +18,10 @@ api = [
 
 pages = [
     "Home" => "index.md",
+    "Scalar Method" => "setting_up_scalar.md",
+    "Vector Method" => "setting_up_vector.md",
     "Installation instructions" => "installation_instructions.md",
     "Contributing" => "contributing.md",
-    "Setting up the Method" => "setting_up.md",
     #    "Samplers" => "Samplers.md",
     #    "Features" => "Features.md",
     #    "Methods" => "Methods.md",
