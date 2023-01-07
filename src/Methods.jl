@@ -39,7 +39,7 @@ struct RandomFeatureMethod
     "A dictionary specifying the batch sizes. Must contain \"train\", \"test\", and \"feature\" keys"
     batch_sizes::Dict
     "A positive definite matrix used during the fit method to regularize the linear solve"
-    regularization::Union{UniformScaling, Matrix}
+    regularization::Union{UniformScaling, AbstractMatrix}
 end
 
 """
@@ -49,7 +49,7 @@ Basic constructor for a `RandomFeatureMethod`.
 """
 function RandomFeatureMethod(
     random_feature::RandomFeature;
-    regularization::Union{Real, Matrix, UniformScaling} = 1e12 * eps() * I,
+    regularization::Union{Real, AbstractMatrix, UniformScaling} = 1e12 * eps() * I,
     batch_sizes::Dict = Dict{AbstractString, Int}("train" => 0, "test" => 0, "feature" => 0),
 )
 
@@ -123,10 +123,12 @@ Holds the coefficients and matrix decomposition that describe a set of fitted ra
 $(TYPEDFIELDS)
 """
 struct Fit
-    "The `LinearAlgreba` matrix decomposition of `(1 / m) * Feature^T * Feature + regularization * I`"
+    "The `LinearAlgreba` matrix decomposition of `(1 / m) * Feature^T * Feature + regularization`"
     feature_factors::Decomposition
     "Coefficients of the fit to data"
     coeffs::AbstractVector
+    "feature-space regularization used during fit"
+    regularization::Union{UniformScaling, AbstractMatrix}
 end
 
 """
@@ -142,6 +144,15 @@ $(TYPEDSIGNATURES)
 gets the `coeffs` field
 """
 get_coeffs(f::Fit) = f.coeffs
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the `regularization` field (note this is the feature-space regularization)
+"""
+get_regularization(f::Fit) = f.regularization
+
+
 
 """
 $(TYPEDSIGNATURES)
@@ -166,31 +177,46 @@ function fit(
     batch_input = batch_generator(input, train_batch_size, dims = 2) # input_dim x batch_size
     batch_output = batch_generator(output, train_batch_size, dims = 2) # output_dim x batch_size
 
+    lambda = get_regularization(rfm)
+    build_regularization = !isa(lambda, UniformScaling) # build if lambda is not a uniform scaling
+    if build_regularization
+        lambda_new = zeros(n_features, n_features)
+    else
+        lambda_new = lambda
+    end
     PhiTY = zeros(n_features) #
     PhiTPhi = zeros(n_features, n_features)
     for (ib, ob) in zip(batch_input, batch_output)
         batch_feature = build_features(rf, ib) # batch_size x output_dim x n_features  
-        #       PhiTY .+= permutedims(batch_feature, (2, 1)) * permutedims(ob, (2, 1))
         @tullio PhiTY[j] += batch_feature[n, p, j] * ob[p, n]
-        #       PhiTPhi .+= permutedims(batch_feature, (2, 1)) * batch_feature
         @tullio PhiTPhi[i, j] += batch_feature[n, p, i] * batch_feature[n, p, j]
+
+        # regularization build needed with p.d matrix lambda
+        if build_regularization
+            inv_batch_feature = permutedims(zeros(size(batch_feature)), (1, 3, 2))
+            for i in 1:size(batch_feature, 1)
+                inv_batch_feature[i, :, :] = pinv(batch_feature[i, :, :])
+                # gives block inverses such that (Phi_n)_{p, k} * (Phiinv_n)_{l,p} = I_{pxp}
+            end
+            @tullio lambda_new[i, j] += batch_feature[n, p, i] * lambda[p, q] * inv_batch_feature[n, j, q]
+
+        end
+
     end
     PhiTPhi ./= n_features
     PhiTY = reshape(PhiTY, n_features, 1, 1) # RHS kept as a 3-array (n_features x n_samples x dim_output)
 
     # solve the linear system
-    # (PhiTPhi + lambda ) * beta = PhiTY
+    # (PhiTPhi + lambda_new ) * beta = PhiTY
 
-    lambda = get_regularization(rfm)
-
-    if lambda == 0 * I
+    if lambda_new == 0 * I
         feature_factors = Decomposition(PhiTPhi, "pinv")
     else
-        feature_factors = Decomposition(PhiTPhi + lambda, decomposition_type)
+        feature_factors = Decomposition(PhiTPhi + lambda_new, decomposition_type)
     end
     coeffs = linear_solve(feature_factors, PhiTY) #n_features x n_samples x dim_output
 
-    return Fit(feature_factors, coeffs[:])
+    return Fit(feature_factors, coeffs[:], lambda_new)
 end
 
 
@@ -313,7 +339,7 @@ function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCont
     test_batch_size = get_batch_size(rfm, "test")
     features_batch_size = get_batch_size(rfm, "feature")
     rf = get_random_feature(rfm)
-    lambda = get_regularization(rfm)
+    lambda = get_regularization(fit)
 
     n_features = get_n_features(rf)
 
