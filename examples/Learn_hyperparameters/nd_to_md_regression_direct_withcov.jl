@@ -56,14 +56,26 @@ function RFM_from_hyperparameters(
     # l = [input_dim params + output_dim params]
     μ_c = 0.0
 
-
-
     cholU = flat_to_chol(l[1:Int(0.5 * input_dim * (input_dim + 1))])
-    cholV = flat_to_chol(l[(Int(0.5 * input_dim * (input_dim + 1)) + 1):end])
+    cholV = flat_to_chol(l[(Int(0.5 * input_dim * (input_dim + 1)) + 1):(end - 2)])
 
     M = zeros(input_dim, output_dim) # n x p mean
-    U = cholU * permutedims(cholU, (2, 1))
-    V = cholV * permutedims(cholV, (2, 1))
+    U = cholU * permutedims(cholU, (2, 1)) + l[end - 1] * I
+    V = cholV * permutedims(cholV, (2, 1)) + l[end] * I
+
+    if !isposdef(U)
+        println("U not posdef - adding to diagonal")
+        correction = abs(minimum(eigvals(U))) + 1e8 * eps()
+        U += correction * I
+        println("added $correction to regularize")
+    end
+    if !isposdef(V)
+        println("V not posdef - adding to diagonal")
+        correction = abs(minimum(eigvals(V))) + 1e8 * eps()
+        V += correction * I
+        println("added $correction to regularize")
+    end
+
     dist = MatrixNormal(M, U, V)
     pd = ParameterDistribution(
         Dict(
@@ -157,6 +169,11 @@ function estimate_mean_and_coeffnorm_covariance(
     approx_σ2 = mean(blockcovmat, dims = 1)[1, :, :] # approx of \sigma^2I +rf var
     #symmeterize
     approx_σ2 = 0.5 * (approx_σ2 + permutedims(approx_σ2, (2, 1)))
+    if !isposdef(approx_σ2)
+        println("approx_σ2 not posdef")
+        correction = abs(minimum(eigvals(approx_σ2))) + 1e8 * eps()
+        approx_σ2 += correction * I # to give a little help with pos def
+    end
 
     return Γ, approx_σ2
 
@@ -208,7 +225,11 @@ function calculate_ensemble_mean_and_coeffnorm(
 
     #symmeterize
     blockcovmat = 0.5 * (blockcovmat + permutedims(blockcovmat, (2, 1)))
-
+    if !isposdef(blockcovmat)
+        println("blockcovmat not posdef")
+        correction = abs(minimum(eigvals(blockcovmat))) + 1e8 * eps()
+        blockcovmat += correction * I # to give a little help with pos def
+    end
 
     return vcat(blockmeans, coeffl2norm), blockcovmat
 
@@ -264,7 +285,7 @@ io_pairs = PairedDataContainer(x, y)
 μ_l = 1.0
 σ_l = 1.0
 # prior for non radial problem
-n_l = Int(0.5 * input_dim * (input_dim + 1)) + Int(0.5 * output_dim * (output_dim + 1))
+n_l = Int(0.5 * input_dim * (input_dim + 1)) + Int(0.5 * output_dim * (output_dim + 1)) + 2
 prior_lengthscale = constrained_gaussian("lengthscale", μ_l, σ_l, 0.0, Inf, repeats = n_l)
 priors = prior_lengthscale
 
@@ -314,6 +335,7 @@ println(
     " + ",
     tr(Γ[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end]),
 )
+println("is EKP noise positive definite? ", isposdef(Γ))
 #println("noise in observations: ", Γ)
 # Create EKI
 N_ens = 10 * input_dim
@@ -337,7 +359,7 @@ for i in 1:N_iter
     g_ens, _ =
         calculate_ensemble_mean_and_coeffnorm(rng, lvec, lambda, n_features, batch_sizes, io_pairs, repeats = repeats)
 
-    if i % update_cov_step == 0 # one update to the 
+    if i % update_cov_step == 0 # to update cov if required
 
         constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
         println("Estimating output covariance with ", n_samples, " samples")
@@ -411,11 +433,11 @@ end
 
 
 cholU = flat_to_chol(final_lvec[1:Int(0.5 * input_dim * (input_dim + 1)), 1])
-cholV = flat_to_chol(final_lvec[(Int(0.5 * input_dim * (input_dim + 1)) + 1):end, 1])
+cholV = flat_to_chol(final_lvec[(Int(0.5 * input_dim * (input_dim + 1)) + 1):(end - 2), 1])
 
 M = zeros(input_dim, output_dim) # n x p mean
-U = cholU * permutedims(cholU, (2, 1))
-V = cholV * permutedims(cholV, (2, 1))
+U = cholU * permutedims(cholU, (2, 1)) + final_lvec[end - 1] * I
+V = cholV * permutedims(cholV, (2, 1)) + final_lvec[end] * I
 dist = MatrixNormal(M, U, V)
 pd = ParameterDistribution(
     Dict(

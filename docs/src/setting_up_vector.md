@@ -131,7 +131,12 @@ One can select batch sizes to balance the space-time (memory-process) trade-off.
 
 !!! warning "Conditioning"
     The problem is ill-conditioned without regularization.
-    If you encounters a Singular or Positive-definite exceptions, try increasing `regularization`
+    If you encounters a Singular or Positive-definite exceptions, try increasing the constant scaling `regularization`
+
+!!! note "Positive-Definite regularizer"
+    There is additional computational expense involved in using a non-diagonal ``\lambda``, though currently the authors do not recommend this approach, because currently one must compute the right inverse of ``\Phi^*`` directly (expensive) with calls to `pinv()` and this cannot be batched. It is also only defined for dimensions ``m < np``.
+    Instead the authors typically recommend replacing non-diagonal ``\lambda`` with ``\frac{\mathrm{tr}(\lambda)}{p}I``, which often provides a reasonable approximation.
+
 
 The solve for ``\beta`` occurs in the `fit` method
 ```julia

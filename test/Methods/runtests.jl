@@ -393,14 +393,12 @@ seed = 2023
                 Matrix,
                 Tridiagonal((5e-3) * ones(output_dim - 1), (2e-2) * ones(output_dim), (5e-3) * ones(output_dim - 1)),
             ),
-            convert(
-                Matrix,
-                Tridiagonal((5e-3) * ones(output_dim - 1), (2e-2) * ones(output_dim), (5e-3) * ones(output_dim - 1)),
-            ),
         ]
         lambdas = [n_data * tr(cov_mats[1]) / output_dim, cov_mats[2]] #n_data * tr(cov_mats[2]) / output_dim]
 
-        Us = [Diagonal([1.1434728362846716]), Diagonal([0.8443449281521409])]
+
+        Us = [Diagonal([1.1434728362846716]), Diagonal([2.994425594434963 + 0.2773188757843493])]
+
         cholV1 = flat_to_chol([
             1.676512094735328,
             0.5191322782406398,
@@ -410,15 +408,15 @@ seed = 2023
             0.9868781033464709,
         ])
         cholV2 = flat_to_chol([
-            1.1664270009749094,
-            0.7154452855148773,
-            0.6338465549623832,
-            0.5159564451488646,
-            0.34546610409778955,
-            0.9788183114171017,
+            0.2602530036918838,
+            0.8349924786237325,
+            0.6877720751280171,
+            0.41049603729753453,
+            0.4462558738758826,
+            0.7515447849602598,
         ])
 
-        Vs = [cholV1 * permutedims(cholV1, (2, 1)), cholV2 * permutedims(cholV2, (2, 1))]
+        Vs = [cholV1 * permutedims(cholV1, (2, 1)), cholV2 * permutedims(cholV2, (2, 1)) + 0.530861233446435 * I]
 
         for (cov_mat, lambda, U, V, exp_name) in zip(cov_mats, lambdas, Us, Vs, exp_names)
 
@@ -430,7 +428,7 @@ seed = 2023
 
             n_test = 200
             #            xtestvec = rand(rng, MvNormal(zeros(input_dim), I), n_test)
-            xtestvec = rand(rng, Uniform(-1.8, 1.8), (1, n_test))
+            xtestvec = rand(rng, Uniform(-2.0, 2.0), (1, n_test))
 
             xtest = DataContainer(xtestvec)
             ytest_nonoise = ftest_1d_to_3d(get_data(xtest))
@@ -452,6 +450,15 @@ seed = 2023
             batch_sizes = Dict("train" => 500, "test" => 500, "feature" => 500)
             rfm_batch = RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = lambda)
             fitted_batched_features = fit(rfm_batch, io_pairs)
+
+            #quick test for the m>np case (changes the regularization)
+            if exp_name == "correlated"
+                vff_tmp = VectorFourierFeature(n_test * output_dim + 1, output_dim, feature_sampler) #m > np
+                rfm_tmp = RandomFeatureMethod(vff_tmp, regularization = lambda)
+                @test_logs (:info,) fit(rfm_tmp, io_pairs)
+                fit_tmp = fit(rfm_tmp, io_pairs)
+                @test fit_tmp.regularization == tr(lambda) / output_dim * I
+            end
 
             # test prediction L^2 error of mean
             prior_mean, prior_cov = predict_prior(rfm_batch, xtest) # predict inputs from unfitted features
