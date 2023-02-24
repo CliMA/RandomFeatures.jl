@@ -42,6 +42,13 @@ function flat_to_chol(x::AbstractArray)
     return cholmat
 end
 
+function posdef_correct(mat::AbstractMatrix, tol = 1e8 * eps())
+    out = 0.5 * (mat + permutedims(mat, (2, 1))) #symmetrize
+    out += (abs(minimum(eigvals(out))) + tol) * I #add to diag
+    return out
+
+end
+
 ## Functions of use
 function RFM_from_hyperparameters(
     rng::AbstractRNG,
@@ -56,15 +63,50 @@ function RFM_from_hyperparameters(
     # l = [input_dim params + output_dim params]
     μ_c = 0.0
 
-
-
-    cholU = flat_to_chol(l[1:Int(0.5 * input_dim * (input_dim + 1))])
-    cholV = flat_to_chol(l[(Int(0.5 * input_dim * (input_dim + 1)) + 1):end])
+    if input_dim > 1 && output_dim > 1
+        cholU = flat_to_chol(l[1:Int(0.5 * input_dim * (input_dim + 1))])
+        cholV = flat_to_chol(
+            l[(Int(0.5 * input_dim * (input_dim + 1)) + 1):Int(
+                0.5 * input_dim * (input_dim + 1) + 0.5 * output_dim * (output_dim + 1),
+            )],
+        )
+        U = l[end - 1] * (cholU * permutedims(cholU, (2, 1)) + l[end - 1] * I)
+        V = l[end] * (cholV * permutedims(cholV, (2, 1)) + l[end] * I)
+    elseif input_dim == 1 && output_dim > 1
+        U = ones(1, 1)
+        cholV = flat_to_chol(l[2:(Int(0.5 * output_dim * (output_dim + 1)) + 1)])
+        V = l[1] * (cholV * permutedims(cholV, (2, 1)) + l[1] * I)
+    elseif input_dim > 1 && output_dim == 1
+        cholU = flat_to_chol(l[1:Int(0.5 * input_dim * (input_dim + 1))])
+        U = l[end] * (holU * permutedims(cholU, (2, 1)) + l[end] * I)
+        V = ones(1, 1)
+    end
 
     M = zeros(input_dim, output_dim) # n x p mean
-    U = cholU * permutedims(cholU, (2, 1))
-    V = cholV * permutedims(cholV, (2, 1))
-    dist = MatrixNormal(M, U, V)
+
+    if !isposdef(U)
+        U = posdef_correct(U)
+    end
+    if !isposdef(V)
+        V = posdef_correct(V)
+    end
+    representation = "covariance" # "covariance"
+    if representation == "precision"
+        Uinv = inv(U)
+        Vinv = inv(V)
+        if !isposdef(Uinv)
+            Uinv = posdef_correct(Uinv)
+        end
+        if !isposdef(Vinv)
+            Vinv = posdef_correct(Vinv)
+        end
+        dist = MatrixNormal(M, Uinv, Vinv)
+    elseif representation == "covariance"
+        dist = MatrixNormal(M, U, V)
+    else
+        throw(ArgumentError("representation must be \"covariance\" else \"precision\". Got $representation"))
+    end
+
     pd = ParameterDistribution(
         Dict(
             "distribution" => Parameterized(dist),
@@ -86,6 +128,7 @@ function calculate_mean_cov_and_coeffs(
     n_features::Int,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer,
+    decomp_type::String = "chol",
 )
 
     n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
@@ -102,7 +145,11 @@ function calculate_mean_cov_and_coeffs(
 
     # build and fit the RF
     rfm = RFM_from_hyperparameters(rng, l, lambda, n_features, batch_sizes, input_dim, output_dim)
-    fitted_features = fit(rfm, io_train_cost, decomposition_type = "svd")
+    if decomp_type == "chol"
+        fitted_features = fit(rfm, io_train_cost, decomposition_type = "cholesky")
+    else
+        fitted_features = fit(rfm, io_train_cost, decomposition_type = "svd")
+    end
 
     test_batch_size = get_batch_size(rfm, "test")
     batch_inputs = batch_generator(itest, test_batch_size, dims = 2) # input_dim x batch_size
@@ -112,7 +159,16 @@ function calculate_mean_cov_and_coeffs(
     # sizes (output_dim x n_test), (output_dim x output_dim x n_test) 
     scaled_coeffs = sqrt(1 / n_features) * get_coeffs(fitted_features)
 
-    return pred_mean, pred_cov, scaled_coeffs
+    if decomp_type == "chol"
+        chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
+        complexity = 2 * sum(log.(diag(chol_fac)))
+    else
+        svd_singval = get_decomposition(get_feature_factors(fitted_features)).S
+        complexity = sum(log.(svd_singval)) # note this is log(abs(det))    
+    end
+    println("sample_complexity", complexity)
+
+    return pred_mean, pred_cov, scaled_coeffs, complexity
 
 end
 
@@ -132,16 +188,19 @@ function estimate_mean_and_coeffnorm_covariance(
     output_dim = size(get_outputs(io_pairs), 1)
     means = zeros(n_test, n_samples, output_dim)
     covs = zeros(n_test, n_samples, output_dim, output_dim)
+    complexity = zeros(1, n_samples)
     coeffl2norm = zeros(1, n_samples)
     for i in 1:n_samples
         for j in 1:repeats
-            m, v, c = calculate_mean_cov_and_coeffs(rng, l, lambda, n_features, batch_sizes, io_pairs)
+            m, v, c, cplxty = calculate_mean_cov_and_coeffs(rng, l, lambda, n_features, batch_sizes, io_pairs)
             # m output_dim x n_test
             # v output_dim x output_dim x n_test
             # c n_features
             means[:, i, :] += m' ./ repeats
             covs[:, i, :, :] += permutedims(v, (3, 1, 2)) ./ repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
+            complexity[1, i] += cplxty / repeats
+
         end
     end
 
@@ -153,10 +212,12 @@ function estimate_mean_and_coeffnorm_covariance(
         blockmeans[id, :] = permutedims(means[i, :, :], (2, 1))
     end
 
-    Γ = cov(vcat(blockmeans, coeffl2norm), dims = 2)
+    Γ = cov(vcat(blockmeans, coeffl2norm, complexity), dims = 2)
     approx_σ2 = mean(blockcovmat, dims = 1)[1, :, :] # approx of \sigma^2I +rf var
-    #symmeterize
-    approx_σ2 = 0.5 * (approx_σ2 + permutedims(approx_σ2, (2, 1)))
+    if !isposdef(approx_σ2)
+        println("approx_σ2 not posdef - correcting")
+        approx_σ2 = posdef_correct(approx_σ2)
+    end
 
     return Γ, approx_σ2
 
@@ -183,17 +244,19 @@ function calculate_ensemble_mean_and_coeffnorm(
 
     means = zeros(n_test, N_ens, output_dim)
     covs = zeros(n_test, N_ens, output_dim, output_dim)
+    complexity = zeros(1, N_ens)
     coeffl2norm = zeros(1, N_ens)
     for i in collect(1:N_ens)
         for j in collect(1:repeats)
             l = lmat[:, i]
-            m, v, c = calculate_mean_cov_and_coeffs(rng, l, lambda, n_features, batch_sizes, io_pairs)
+            m, v, c, cplxty = calculate_mean_cov_and_coeffs(rng, l, lambda, n_features, batch_sizes, io_pairs)
             # m output_dim x n_test
             # v output_dim x output_dim x n_test
             # c n_features
             means[:, i, :] += m' ./ repeats
             covs[:, i, :, :] += permutedims(v, (3, 1, 2)) ./ repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
+            complexity[1, i] += cplxty / repeats
         end
     end
 
@@ -206,12 +269,11 @@ function calculate_ensemble_mean_and_coeffnorm(
     end
     blockcovmat = mean(blockcovmat, dims = 1)[1, :, :] # np x np
 
-    #symmeterize
-    blockcovmat = 0.5 * (blockcovmat + permutedims(blockcovmat, (2, 1)))
-
-
-    return vcat(blockmeans, coeffl2norm), blockcovmat
-
+    if !isposdef(blockcovmat)
+        println("blockcovmat not posdef - correcting")
+        blockcovmat = posdef_correct(blockcovmat)
+    end
+    return vcat(blockmeans, coeffl2norm, complexity), blockcovmat
 end
 
 ## Begin Script, define problem setting
@@ -238,7 +300,7 @@ function ftest_1d_to_3d(x::AbstractMatrix)
 end
 
 #problem formulation
-n_data = 50
+n_data = 100
 x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
 
 # diagonal noise
@@ -251,9 +313,10 @@ noise_dist = MvNormal(zeros(output_dim), cov_mat)
 noise = rand(rng, noise_dist, n_data)
 
 # simple regularization
-#lambda = tr(cov_mat)/output_dim
+lambda = tr(cov_mat) / output_dim * I
 # more complex
-lambda = cov_mat
+#lambda = cov_mat
+
 
 
 y = ftest_1d_to_3d(x) + noise
@@ -261,18 +324,21 @@ io_pairs = PairedDataContainer(x, y)
 
 ## Define Hyperpriors for EKP
 
-μ_l = 1.0
-σ_l = 1.0
+μ_l = 2.0
+σ_l = 3.0
 # prior for non radial problem
 n_l = Int(0.5 * input_dim * (input_dim + 1)) + Int(0.5 * output_dim * (output_dim + 1))
+n_l += (input_dim > 1 && output_dim > 1) ? 2 : 0
+
 prior_lengthscale = constrained_gaussian("lengthscale", μ_l, σ_l, 0.0, Inf, repeats = n_l)
 priors = prior_lengthscale
+println("number of hyperparameters to train: ", n_l)
 
 # estimate the noise from running many RFM sample costs at the mean values
 batch_sizes = Dict("train" => 600, "test" => 600, "feature" => 600)
 n_train = Int(floor(0.8 * n_data))
 n_test = n_data - n_train
-n_features = Int(floor(1.2 * n_data))
+n_features = Int(floor(2 * n_data))
 # RF will perform poorly when n_features is close to n_train
 @assert(!(n_features == n_train)) #
 
@@ -299,10 +365,11 @@ if CALC_TRUTH
     )
 
 
-    save("calculated_truth_cov.jld2", "internal_Γ", internal_Γ)
+    save("calculated_truth_cov.jld2", "internal_Γ", internal_Γ, "approx_σ2", approx_σ2)
 else
     println("Loading truth covariance from file...")
     internal_Γ = load("calculated_truth_cov.jld2")["internal_Γ"]
+    approx_σ2 = load("calculated_truth_cov.jld2")["approx_σ2"]
 end
 
 Γ = internal_Γ
@@ -312,18 +379,35 @@ println(
     "Estimated variance. Tr(cov) = ",
     tr(Γ[1:(n_test * output_dim), 1:(n_test * output_dim)]),
     " + ",
-    tr(Γ[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end]),
+    Γ[end - 1, end - 1],
+    " + ",
+    Γ[end, end],
 )
+println("is EKP noise positive definite? ", isposdef(Γ))
 #println("noise in observations: ", Γ)
 # Create EKI
 N_ens = 10 * input_dim
-N_iter = 30
+N_iter = 10
 update_cov_step = Inf
 
 initial_params = construct_initial_ensemble(priors, N_ens; rng_seed = ekp_seed)
 params_init = transform_unconstrained_to_constrained(priors, initial_params)#[1, :]
 println("Prior gives parameters between: [$(minimum(params_init)),$(maximum(params_init))]")
-data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0) #flatten data
+
+if isa(lambda, Real)
+    min_complexity = n_features * log(lambda)
+    data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
+elseif isa(lambda, UniformScaling)
+    min_complexity = n_features * log(lambda.λ)
+    data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
+else
+    min_complexity = n_features / output_dim * 2 * sum(log.(diag(cholesky(lambda).L)))
+    # TODO: SOLVE EVAL PROBLEM TO FIT WITH THIS DATA. the following is just a fudge to get reasonable scaling and not a global truth
+    min_complexity *= 1
+
+    data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
+end
+println("min_complexity: ", min_complexity)
 
 ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data[:], Γ, Inversion())]
 err = zeros(N_iter)
@@ -337,7 +421,7 @@ for i in 1:N_iter
     g_ens, _ =
         calculate_ensemble_mean_and_coeffnorm(rng, lvec, lambda, n_features, batch_sizes, io_pairs, repeats = repeats)
 
-    if i % update_cov_step == 0 # one update to the 
+    if i % update_cov_step == 0 # to update cov if required
 
         constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
         println("Estimating output covariance with ", n_samples, " samples")
@@ -361,7 +445,7 @@ for i in 1:N_iter
             tr(Γ_new[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end]),
         )
 
-        ekiobj[1] = EKP.EnsembleKalmanProcess(get_u_final(ekiobj[1]), data, Γ_new, Inversion())
+        ekiobj[1] = EKP.EnsembleKalmanProcess(get_u_final(ekiobj[1]), data[:], Γ_new, Inversion())
 
     end
 
@@ -383,7 +467,7 @@ end
 #run actual experiment
 # override following parameters for actual run
 n_data_test = 100 * input_dim
-n_features_test = Int(floor(1.2 * n_data_test))
+n_features_test = Int(floor(2 * n_data_test))
 println("number of training data: ", n_data_test)
 println("number of features: ", n_features_test)
 x_test = rand(rng, MvNormal(zeros(input_dim), 0.5 * I), n_data_test)
@@ -398,43 +482,13 @@ println("**********")
 println("Optimal lengthscales: $(final_lvec)")
 println("**********")
 
-μ_c = 0.0
-#=
-if size(final_lvec, 1) == 1
-    σ_c = repeat([final_lvec[1, 1]], input_dim)
-    σ_o = repeat([final_lvec[1, 1]], output_dim)
-else
-    σ_c = final_lvec[1:input_dim, 1]
-    σ_o = final_lvec[(input_dim + 1):end, 1]
-end
-=#
 
-
-cholU = flat_to_chol(final_lvec[1:Int(0.5 * input_dim * (input_dim + 1)), 1])
-cholV = flat_to_chol(final_lvec[(Int(0.5 * input_dim * (input_dim + 1)) + 1):end, 1])
-
-M = zeros(input_dim, output_dim) # n x p mean
-U = cholU * permutedims(cholU, (2, 1))
-V = cholV * permutedims(cholV, (2, 1))
-dist = MatrixNormal(M, U, V)
-pd = ParameterDistribution(
-    Dict(
-        "distribution" => Parameterized(dist),
-        "constraint" => repeat([no_constraint()], input_dim * output_dim),
-        "name" => "xi",
-    ),
-)
-feature_sampler = FeatureSampler(pd, output_dim, rng = rng)
-vff = VectorFourierFeature(n_features, output_dim, feature_sampler)
-
-#second case with batching
-
-rfm = RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = lambda)
-fitted_features = fit(rfm, io_pairs_test, decomposition_type = "svd")
+rfm = RFM_from_hyperparameters(rng, final_lvec, lambda, n_features, batch_sizes, input_dim, output_dim)
+fitted_features = fit(rfm, io_pairs_test, decomposition_type = "cholesky")
 
 if PLOT_FLAG
     # learning on Normal(0,1) dist, forecast on (-2,2)
-    xrange = reshape(collect(-1.51:0.02:1.51), 1, :)
+    xrange = reshape(collect(-2.01:0.02:2.01), 1, :)
 
     yrange = ftest_1d_to_3d(xrange)
 

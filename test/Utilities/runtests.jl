@@ -37,7 +37,6 @@ using RandomFeatures.Utilities
     N = 30
     x = [i + j for i in 1:N, j in 1:N]
     x = 1 ./ (x + x') + 1e-3 * I
-
     # internally RHS are stored with three indices.
     # (n_features x n_samples, output_dim)
     b = ones(N, 1, 1)
@@ -54,6 +53,10 @@ using RandomFeatures.Utilities
     @test isposdef(x)
     xchol = Decomposition(x, "cholesky")
     xpinv = Decomposition(x, "pinv")
+
+    xbad = [1 1; 1 0] # not pos def
+    xbadchol = Decomposition(xbad, "cholesky")
+    @test isposdef(get_full_matrix(xbadchol))
 
     xsvdsolve = linear_solve(xsvd, b)
     xqrsolve = linear_solve(xqr, b)
@@ -78,6 +81,7 @@ using RandomFeatures.Utilities
     ysolve = zeros(size(b))
     ysolve[:, :, 1] = pinv(y) * b[:, :, 1]
     @test linear_solve(ypinv, b) ≈ ysolve
+
 
 
 end

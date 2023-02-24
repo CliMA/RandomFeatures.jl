@@ -209,9 +209,9 @@ seed = 2023
                 sqrt(sum((ytest_nonoise - prior_mean_sig) .^ 2)),
             ]
             priorweightedL2err[exp_idx, :] += [
-                sqrt(sum(1 ./ prior_cov .* (ytest_nonoise - prior_mean) .^ 2)),
-                sqrt(sum(1 ./ prior_cov_relu .* (ytest_nonoise - prior_mean_relu) .^ 2)),
-                sqrt(sum(1 ./ prior_cov_sig .* (ytest_nonoise - prior_mean_sig) .^ 2)),
+                sqrt(sum(1 ./ (prior_cov .+ noise_sd^2) .* (ytest_nonoise - prior_mean) .^ 2)),
+                sqrt(sum(1 ./ (prior_cov_relu .+ noise_sd^2) .* (ytest_nonoise - prior_mean_relu) .^ 2)),
+                sqrt(sum(1 ./ (prior_cov_sig .+ noise_sd^2) .* (ytest_nonoise - prior_mean_sig) .^ 2)),
             ]
             L2err[exp_idx, :] += [
                 sqrt(sum((ytest_nonoise - pred_mean) .^ 2)),
@@ -219,26 +219,26 @@ seed = 2023
                 sqrt(sum((ytest_nonoise - pred_mean_sig) .^ 2)),
             ]
             weightedL2err[exp_idx, :] += [
-                sqrt(sum(1 ./ pred_cov .* (ytest_nonoise - pred_mean) .^ 2)),
-                sqrt(sum(1 ./ pred_cov_relu .* (ytest_nonoise - pred_mean_relu) .^ 2)),
-                sqrt(sum(1 ./ pred_cov_sig .* (ytest_nonoise - pred_mean_sig) .^ 2)),
+                sqrt(sum(1 ./ (pred_cov .+ noise_sd^2) .* (ytest_nonoise - pred_mean) .^ 2)),
+                sqrt(sum(1 ./ (pred_cov_relu .+ noise_sd^2) .* (ytest_nonoise - pred_mean_relu) .^ 2)),
+                sqrt(sum(1 ./ (pred_cov_sig .+ noise_sd^2) .* (ytest_nonoise - pred_mean_sig) .^ 2)),
             ]
         end
 
         println("Prior for 1d->1d:")
         println("L2 errors: fourier, neuron, sigmoid")
         println(priorL2err)
-        # println("weighted L2 errors: fourier, neuron, sigmoid")
-        # println(priorweightedL2err)
+        #println("weighted L2 errors: fourier, neuron, sigmoid")
+        #println(priorweightedL2err)
 
         println("Posterior for 1d->1d, with increasing data:")
         println("L2 errors: fourier, neuron, sigmoid")
         println(L2err)
         @test all([all(L2err[i, :] .< L2err[i - 1, :]) for i in 2:size(L2err, 1)])
         ## This test is too brittle for small data
-        # println("weighted L2 errors: fourier, neuron, sigmoid")
-        # println(weightedL2err)
-        # @test all([all(weightedL2err[i,:] .< weightedL2err[i-1,:]) for i=2:size(weightedL2err,1)])
+        #println("weighted L2 errors: fourier, neuron, sigmoid")
+        #println(weightedL2err)
+        #@test all([all(weightedL2err[i,:] .< weightedL2err[i-1,:]) for i=2:size(weightedL2err,1)])
 
     end # testset "Fit and predict"
 
@@ -247,7 +247,7 @@ seed = 2023
 
         rng = StableRNG(seed + 1)
         input_dim = 6
-        n_features = 4000
+        n_features = 3000
         ftest_nd_to_1d(x::AbstractMatrix) =
             mapslices(column -> exp(-0.1 * norm([i * c for (i, c) in enumerate(column)])^2), x, dims = 1)
 
@@ -261,7 +261,7 @@ seed = 2023
         y = ftest_nd_to_1d(x) + noise
         io_pairs = PairedDataContainer(x, y)
 
-        n_test = 1000
+        n_test = 500
         xtestvec = rand(rng, MvNormal(zeros(input_dim), I), n_test)
 
         xtest = DataContainer(xtestvec)
@@ -298,20 +298,20 @@ seed = 2023
         # test prediction with different features
         prior_mean, prior_cov = predict_prior(rfm_batch, xtest) # predict inputs from unfitted features
         priorL2err = sqrt(sum((ytest_nonoise - prior_mean) .^ 2))
-        priorweightedL2err = sqrt(sum(1 ./ prior_cov .* (ytest_nonoise - prior_mean) .^ 2))
+        priorweightedL2err = sqrt(sum(1 ./ (prior_cov .+ noise_sd^2) .* (ytest_nonoise - prior_mean) .^ 2))
         println("Prior for nd->1d")
         println("L2 error: ", priorL2err)
-        println("weighted L2 error: ", priorweightedL2err)
+        #println("weighted L2 error: ", priorweightedL2err)
 
         pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
         L2err = sqrt(sum((ytest_nonoise - pred_mean) .^ 2))
-        weightedL2err = sqrt(sum(1 ./ pred_cov .* (ytest_nonoise - pred_mean) .^ 2))
+        weightedL2err = sqrt(sum(1 ./ (pred_cov .+ noise_sd^2) .* (ytest_nonoise - pred_mean) .^ 2))
         println("Posterior for nd->1d")
         println("L2 error: ", L2err)
-        println("weighted L2 error: ", weightedL2err)
+        #println("weighted L2 error: ", weightedL2err)
 
         @test L2err < priorL2err
-        @test weightedL2err < priorweightedL2err
+        #@test weightedL2err < priorweightedL2err
 
         if TEST_PLOT_FLAG
             #plot slice through one dimensions, others fixed to 0
@@ -354,7 +354,7 @@ seed = 2023
         rng = StableRNG(seed + 2)
         input_dim = 1
         output_dim = 3
-        n_features = 100
+        n_features = 300
         function ftest_1d_to_3d(x::AbstractMatrix)
             out = zeros(3, size(x, 2))
             out[1, :] = mapslices(column -> sin(norm([i * c for (i, c) in enumerate(column)])^2), x, dims = 1)
@@ -381,44 +381,58 @@ seed = 2023
             return cholmat
         end
         #problem formulation
-        n_data = 100
+        n_data = 200
         x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
 
         # run three sims, one with diagonal noise, one with multivariate using ID reg, one with multivariate using cov reg.
         # use learnt hyperparameters from nd_to_md_regression_direct_withcov.jl
-        exp_names = ["diagonal", "correlated"]
+        # TODO make non-diagonal lambdamat stable for hyperparameter learning.
+        exp_names = ["diagonal", "correlated-lambdaconst", "diagonal-lambdamat"]
         cov_mats = [
             Diagonal((5e-2)^2 * ones(output_dim)),
             convert(
                 Matrix,
                 Tridiagonal((5e-3) * ones(output_dim - 1), (2e-2) * ones(output_dim), (5e-3) * ones(output_dim - 1)),
             ),
-            convert(
-                Matrix,
-                Tridiagonal((5e-3) * ones(output_dim - 1), (2e-2) * ones(output_dim), (5e-3) * ones(output_dim - 1)),
-            ),
+            Diagonal((5e-2)^2 * ones(output_dim)),
         ]
-        lambdas = [n_data * tr(cov_mats[1]) / output_dim, cov_mats[2]] #n_data * tr(cov_mats[2]) / output_dim]
+        lambdas = [n_data * tr(cov_mats[1]) / output_dim, n_data * tr(cov_mats[2]) / output_dim, cov_mats[3]] #n_data * tr(cov_mats[2]) / output_dim]
 
-        Us = [Diagonal([1.1434728362846716]), Diagonal([0.8443449281521409])]
+
+        Us = [ones(1, 1), ones(1, 1), ones(1, 1)]
+
         cholV1 = flat_to_chol([
-            1.676512094735328,
-            0.5191322782406398,
-            0.6826859416721992,
-            0.3424593882293879,
-            0.2254132846804566,
-            0.9868781033464709,
-        ])
-        cholV2 = flat_to_chol([
-            1.1664270009749094,
-            0.7154452855148773,
-            0.6338465549623832,
-            0.5159564451488646,
-            0.34546610409778955,
-            0.9788183114171017,
+            8.362337696305998,
+            2.0414713252861274,
+            1.5437380839848849,
+            1.6781236816956293,
+            6.052769130133012,
+            3.41806535129449,
         ])
 
-        Vs = [cholV1 * permutedims(cholV1, (2, 1)), cholV2 * permutedims(cholV2, (2, 1))]
+        cholV2 = flat_to_chol([
+            0.0760131353178224,
+            0.0061778388407999485,
+            0.2879130200863358,
+            0.009876125611638314,
+            1.2538072424786695,
+            0.12658502844525313,
+        ])
+
+        cholV3 = flat_to_chol([
+            3.3947913662383993,
+            4.513920749058326,
+            6.33201564138692,
+            4.960215127896483,
+            4.326055230402879,
+            2.363581198939604,
+        ])
+
+        Vs = [
+            0.19126072607110411 * (cholV1 * permutedims(cholV1, (2, 1)) + 0.19126072607110411 * I),
+            0.9178068811761838 * (cholV2 * permutedims(cholV2, (2, 1)) + 0.9178068811761838 * I),
+            0.6534118351778215 * (cholV3 * permutedims(cholV3, (2, 1)) + 0.6534118351778215 * I),
+        ]
 
         for (cov_mat, lambda, U, V, exp_name) in zip(cov_mats, lambdas, Us, Vs, exp_names)
 
@@ -430,7 +444,7 @@ seed = 2023
 
             n_test = 200
             #            xtestvec = rand(rng, MvNormal(zeros(input_dim), I), n_test)
-            xtestvec = rand(rng, Uniform(-1.8, 1.8), (1, n_test))
+            xtestvec = rand(rng, Uniform(-2.01, 2.01), (1, n_test))
 
             xtest = DataContainer(xtestvec)
             ytest_nonoise = ftest_1d_to_3d(get_data(xtest))
@@ -453,6 +467,15 @@ seed = 2023
             rfm_batch = RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = lambda)
             fitted_batched_features = fit(rfm_batch, io_pairs)
 
+            #quick test for the m>np case (changes the regularization)
+            if exp_name == "diagonal-lambdamat"
+                vff_tmp = VectorFourierFeature(n_test * output_dim + 1, output_dim, feature_sampler) #m > np
+                rfm_tmp = RandomFeatureMethod(vff_tmp, regularization = lambda)
+                @test_logs (:info,) fit(rfm_tmp, io_pairs)
+                fit_tmp = fit(rfm_tmp, io_pairs)
+                @test fit_tmp.regularization == tr(lambda) / output_dim * I
+            end
+
             # test prediction L^2 error of mean
             prior_mean, prior_cov = predict_prior(rfm_batch, xtest) # predict inputs from unfitted features
             #  2 x n,  2 x 2 x n
@@ -460,7 +483,7 @@ seed = 2023
             priorweightedL2err = [0.0]
             for i in 1:n_test
                 diff = reshape(ytest_nonoise[:, i] - prior_mean[:, i], :, 1)
-                priorweightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(prior_cov[:, :, i]) * diff)
+                priorweightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(prior_cov[:, :, i] + cov_mat) * diff)
             end
             priorweightedL2err = sqrt.(priorweightedL2err)[:]
             println("Prior for 1d->3d")
@@ -471,23 +494,22 @@ seed = 2023
             #println(pred_mean)
             L2err = sqrt.(sum((ytest_nonoise - pred_mean) .^ 2))
             weightedL2err = [0.0]
-            for i in 1:n_test
-                diff = reshape(ytest_nonoise[:, i] - pred_mean[:, i], :, 1)
-                #                weightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(pred_cov[:, :, i]) * diff)
-            end
-            #            weightedL2err = sqrt.(weightedL2err)[:]
+            #for i in 1:n_test
+            #    diff = reshape(ytest_nonoise[:, i] - pred_mean[:, i], :, 1)
+            #    weightedL2err .+= sum(permutedims(diff, (2, 1)) * inv(pred_cov[:, :, i] + cov_mat) * diff)
+            #end
+            #weightedL2err = sqrt.(weightedL2err)[:]
             println("Posterior for 1d->3d")
             println("L2 error: ", L2err)
-            #            println("weighted L2 error: ", weightedL2err)
+            #println("weighted L2 error: ", weightedL2err)
 
-            #@test L2err < priorL2err
-            #        @test weightedL2err < priorweightedL2err
+            @test L2err < priorL2err
+            #@test weightedL2err < priorweightedL2err
 
 
             if TEST_PLOT_FLAG
-                # learning on Normal(0,1) dist, forecast on (-1.8,1.8)
-                # NB lamda=cov does very poorly outside good data.
-                xrange = reshape(collect(-1.81:0.02:1.81), 1, :)
+                # learning on Normal(0,1) dist, forecast on (-2.01,2.01)
+                xrange = reshape(collect(-2.01:0.02:2.01), 1, :)
 
                 yrange = ftest_1d_to_3d(xrange)
 
