@@ -167,6 +167,7 @@ function fit(
 )
 
     (input, output) = get_data(input_output_pairs)
+    input_dim, n_data = size(input)
     output_dim = size(output, 1) # for scalar features this is 1
 
     train_batch_size = get_batch_size(rfm, "train")
@@ -184,23 +185,32 @@ function fit(
     else
         lambda_new = lambda
     end
+
+    # regularization build needed with p.d matrix lambda
+    if build_regularization
+        if output_dim * n_data < n_features
+            @info(
+                "pos-def regularization formulation ill-defined for output_dim ($output_dim) * n_data ($n_data) < n_feature ($n_features). \n Treating it as if regularization was a constant diagonal size tr(regularization_matrix) / output_dim"
+            )
+            lambda_new = tr(lambda) / output_dim * I
+        else
+            # COMPLEXITY IS EXPENSIVE ~ m(np)^2 ? and not obvious to batch!!
+            nonbatch_feature = build_features(rf, input) # n_data (N) x output_dim(P) x n_features(M)  
+
+            #build making I_mxm right pseudoinv "Phi^T", viewed as M x NP 
+            inv_feature = pinv(reshape(nonbatch_feature, (n_data * output_dim, n_features))) # pinv( np, i ) = i, np
+            inv_feature = reshape(inv_feature, (n_features, n_data, output_dim))# i, np -> i, n, p
+            # the pinv of m x np is right when np > m and left when np < m
+            @tullio lambda_new[i, j] += nonbatch_feature[n, p, i] * lambda[p, q] * inv_feature[j, n, q]
+        end
+    end
+
     PhiTY = zeros(n_features) #
     PhiTPhi = zeros(n_features, n_features)
     for (ib, ob) in zip(batch_input, batch_output)
         batch_feature = build_features(rf, ib) # batch_size x output_dim x n_features  
         @tullio PhiTY[j] += batch_feature[n, p, j] * ob[p, n]
         @tullio PhiTPhi[i, j] += batch_feature[n, p, i] * batch_feature[n, p, j]
-
-        # regularization build needed with p.d matrix lambda
-        if build_regularization
-            inv_batch_feature = permutedims(zeros(size(batch_feature)), (1, 3, 2))
-            for i in 1:size(batch_feature, 1)
-                inv_batch_feature[i, :, :] = pinv(batch_feature[i, :, :])
-                # gives block inverses such that (Phi_n)_{p, k} * (Phiinv_n)_{l,p} = I_{pxp}
-            end
-            @tullio lambda_new[i, j] += batch_feature[n, p, i] * lambda[p, q] * inv_batch_feature[n, j, q]
-
-        end
 
     end
     PhiTPhi ./= n_features

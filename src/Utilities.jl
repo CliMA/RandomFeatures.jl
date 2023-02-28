@@ -61,7 +61,7 @@ struct Decomposition{T}
     decomposition::Union{AbstractMatrix, Factorization}
 end
 
-function Decomposition(mat::AbstractMatrix, method::AbstractString)
+function Decomposition(mat::AbstractMatrix, method::AbstractString; nugget::Real = 1e12 * eps())
     if method == "pinv"
         decomposition = pinv(mat)
         return Decomposition{PseInv}(mat, decomposition)
@@ -77,13 +77,21 @@ function Decomposition(mat::AbstractMatrix, method::AbstractString)
             )
         else
             f = getfield(LinearAlgebra, Symbol(method))
-            decomposition = f(mat)
-        end
 
-        return Decomposition{Factor}(mat, decomposition)
+            if method == "cholesky"
+                if !isposdef(mat)
+                    @info "Random Feature system not positive definite. Performing cholesky factorization with a close positive definite matrix"
+                    mat = 0.5 * (mat + permutedims(mat, (2, 1))) #symmetrize
+                    correction = abs(minimum(eigvals(mat))) + nugget #add min eval + eps
+                    mat += correction * I
+                end
+
+            end
+            decomposition = f(mat)
+            return Decomposition{Factor}(mat, decomposition)
+        end
     end
 end
-
 """
 $(TYPEDSIGNATURES)
 
