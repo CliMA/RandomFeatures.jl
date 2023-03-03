@@ -46,7 +46,9 @@ seed = 2023
         @test get_regularization(rfm_warn) ≈ 1e12 * eps() * I
 
         rfm_warn2 = RandomFeatureMethod(sff, regularization = lambdamat_warn, batch_sizes = batch_sizes)
-        @test get_regularization(rfm_warn2) ≈ abs(1.0 / get_output_dim(sff) * tr(lambdamat_warn)) * I
+        reg_new = get_regularization(rfm_warn2)
+        @test isposdef(reg_new)
+        @test minimum(eigvals(reg_new)) > 1e12 * eps()
 
         rfm = RandomFeatureMethod(sff, regularization = lambdamat, batch_sizes = batch_sizes)
         @test get_regularization(rfm) ≈ lambdamat
@@ -385,9 +387,8 @@ seed = 2023
         x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
 
         # run three sims, one with diagonal noise, one with multivariate using ID reg, one with multivariate using cov reg.
-        # use learnt hyperparameters from nd_to_md_regression_direct_withcov.jl
         # TODO make non-diagonal lambdamat stable for hyperparameter learning.
-        exp_names = ["diagonal", "correlated-lambdaconst", "diagonal-lambdamat"]
+        exp_names = ["diagonal", "correlated-lambdaconst", "diagonal-lambdamat", "correlated-lambdamat"]
         cov_mats = [
             Diagonal((5e-2)^2 * ones(output_dim)),
             convert(
@@ -395,46 +396,63 @@ seed = 2023
                 Tridiagonal((5e-3) * ones(output_dim - 1), (2e-2) * ones(output_dim), (5e-3) * ones(output_dim - 1)),
             ),
             Diagonal((5e-2)^2 * ones(output_dim)),
-        ]
-        lambdas = [n_data * tr(cov_mats[1]) / output_dim, n_data * tr(cov_mats[2]) / output_dim, cov_mats[3]] #n_data * tr(cov_mats[2]) / output_dim]
-
-
-        Us = [ones(1, 1), ones(1, 1), ones(1, 1)]
-
-        cholV1 = flat_to_chol([
-            8.362337696305998,
-            2.0414713252861274,
-            1.5437380839848849,
-            1.6781236816956293,
-            6.052769130133012,
-            3.41806535129449,
-        ])
-
-        cholV2 = flat_to_chol([
-            0.0760131353178224,
-            0.0061778388407999485,
-            0.2879130200863358,
-            0.009876125611638314,
-            1.2538072424786695,
-            0.12658502844525313,
-        ])
-
-        cholV3 = flat_to_chol([
-            3.3947913662383993,
-            4.513920749058326,
-            6.33201564138692,
-            4.960215127896483,
-            4.326055230402879,
-            2.363581198939604,
-        ])
-
-        Vs = [
-            0.19126072607110411 * (cholV1 * permutedims(cholV1, (2, 1)) + 0.19126072607110411 * I),
-            0.9178068811761838 * (cholV2 * permutedims(cholV2, (2, 1)) + 0.9178068811761838 * I),
-            0.6534118351778215 * (cholV3 * permutedims(cholV3, (2, 1)) + 0.6534118351778215 * I),
+            convert(
+                Matrix,
+                Tridiagonal((5e-3) * ones(output_dim - 1), (2e-2) * ones(output_dim), (5e-3) * ones(output_dim - 1)),
+            ),
         ]
 
-        for (cov_mat, lambda, U, V, exp_name) in zip(cov_mats, lambdas, Us, Vs, exp_names)
+        lambdas = [
+            exp((1 / output_dim) * sum(log.(eigvals(cov_mats[1])))) * I, #det(C)^{1/m}*I
+            exp((1 / output_dim) * sum(log.(eigvals(cov_mats[2])))) * I,
+            cov_mats[3],
+            cov_mats[4],
+        ]
+
+        # use learnt hyperparameters from nd_to_md_regression_direct_withcov.jl
+        hps = [
+            [
+                0.4593643339085826,
+                3.4402666569048286,
+                0.7969152294959352,
+                1.6851794464936298,
+                3.4527613874722656,
+                5.854154858415093,
+                2.302845969371132,
+            ],
+            [
+                0.5262518700390091,
+                3.101856977561892,
+                0.26825394655980433,
+                0.7441825061473302,
+                2.82685046470828,
+                1.6584531227433983,
+                1.7630307816260378,
+            ],
+            [
+                1.0743245054960715,
+                2.431492517819835,
+                1.3719239685183025,
+                2.1201669372745564,
+                5.5003047613684934,
+                4.331847045019546,
+                2.2668423707079453,
+            ],
+            [
+                0.3498665262324442,
+                2.9456636865429298,
+                0.22302714358146644,
+                4.1288684250215555,
+                0.43381960299341393,
+                5.405698886196184,
+                0.5746603230965016,
+            ],
+        ]
+        for (cov_mat, lambda, hp, exp_name) in zip(cov_mats, lambdas, hps, exp_names)
+
+            U = ones(1, 1)
+            cholV = flat_to_chol(hp[2:(Int(0.5 * output_dim * (output_dim + 1)) + 1)])
+            V = hp[1] * (cholV * permutedims(cholV, (2, 1)) + hp[1] * I)
 
             noise_dist = MvNormal(zeros(output_dim), cov_mat)
             noise = rand(rng, noise_dist, n_data)
@@ -473,7 +491,7 @@ seed = 2023
                 rfm_tmp = RandomFeatureMethod(vff_tmp, regularization = lambda)
                 @test_logs (:info,) fit(rfm_tmp, io_pairs)
                 fit_tmp = fit(rfm_tmp, io_pairs)
-                @test fit_tmp.regularization == tr(lambda) / output_dim * I
+                @test fit_tmp.regularization ≈ det(lambda)^(1 / output_dim) * I
             end
 
             # test prediction L^2 error of mean

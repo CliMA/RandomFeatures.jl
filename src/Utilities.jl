@@ -3,7 +3,16 @@ module Utilities
 using LinearAlgebra, DocStringExtensions, Tullio
 
 export batch_generator,
-    Decomposition, StoredInvType, Factor, PseInv, get_decomposition, get_full_matrix, get_parametric_type, linear_solve
+    Decomposition,
+    StoredInvType,
+    Factor,
+    PseInv,
+    get_decomposition,
+    get_full_matrix,
+    get_parametric_type,
+    linear_solve,
+    posdef_correct
+
 
 """
 $(TYPEDSIGNATURES)
@@ -29,6 +38,18 @@ end
 
 
 # Decomposition/linear solves for feature matrices
+
+"""
+    posdef_correct(mat::AbstractMatrix; tol::Real=1e8*eps())
+
+Makes square matrix `mat` positive definite, by symmetrizing and bounding the minimum eigenvalue below by `tol`
+"""
+function posdef_correct(mat::AbstractMatrix; tol::Real = 1e12 * eps())
+    out = 0.5 * (mat + permutedims(mat, (2, 1))) #symmetrize
+    out += (abs(minimum(eigvals(out))) + tol) * I #add to diag
+    return out
+end
+
 
 """
 $(TYPEDEF)
@@ -81,9 +102,7 @@ function Decomposition(mat::AbstractMatrix, method::AbstractString; nugget::Real
             if method == "cholesky"
                 if !isposdef(mat)
                     @info "Random Feature system not positive definite. Performing cholesky factorization with a close positive definite matrix"
-                    mat = 0.5 * (mat + permutedims(mat, (2, 1))) #symmetrize
-                    correction = abs(minimum(eigvals(mat))) + nugget #add min eval + eps
-                    mat += correction * I
+                    mat = posdef_correct(mat, tol = nugget)
                 end
 
             end
