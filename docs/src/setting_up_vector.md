@@ -115,11 +115,19 @@ The keyword `feature_parameters = Dict("sigma" => a)`, can be included to set th
 
 ## Method
 
-The `RandomFeatureMethod` sets up the training problem to learn coefficients ``\beta\in\mathbb{R}^m`` from input-output training data ``(x,y)=\{(x_i,y_i)\}_{i=1}^n``, ``y_i \in \mathbb{R}^p``  and parameters ``\theta = \{\theta_j\}_{j=1}^m``. In Einstein summation notation the method solves the following system
+The `RandomFeatureMethod` sets up the training problem to learn coefficients ``\beta\in\mathbb{R}^m`` from input-output training data ``(x,y)=\{(x_i,y_i)\}_{i=1}^n``, ``y_i \in \mathbb{R}^p``  and parameters ``\theta = \{\theta_j\}_{j=1}^m``. Regularization is provided through ``\Lambda = \lambda \otimes I_{n\times n}`` from a user-provided `p-by-p` positive-definite regularization matrix ``\lambda``. In Einstein summation notation the method solves the following system
 ```math
-(\frac{1}{m}\Phi_{n,i,p}(x;\theta) \Phi_{n,j,p}(x;\theta) + \Phi_{n,i,p}\Lambda_{p,q,n,m}\Phi^*_{m,j,q}) \beta_j = \Phi(x;\theta)_{n,i,p}y_{n,p}
+(\frac{1}{m}\Phi_{n,i,p}(x;\theta) \Phi_{n,j,p}(x;\theta) + R_{i,j}) \beta_j = \Phi(x;\theta)_{n,i,p}y_{n,p}
 ```
-Where ``\Lambda = \lambda \otimes I_{n\times n}`` is defined by a user-provided `p-by-p` positive-definite regularization matrix ``\lambda``. ``\Phi^*`` is defined through ``\Phi_{n,i,p} \Phi^*_{n,j,p} = \delta_{i,j}``. If ``\lambda`` is provided as a constant or diagonal, then this term reduces to ``\lambda I_{m \times m}`` or ``\lambda \otimes I_{m \times m}``.
+and where the regularization ``R`` is built from ``\Lambda`` by solving the non-square system
+```math
+ \Phi_{m,j,q} R_{i,j} = \Phi_{n,i,p} \Lambda_{p,q,n,m}
+```
+In the case the ``\lambda`` is provided as a `Real` or `UniformScaling` then ``R`` is (consistently) replaced with ``\lambda I_{m\times m}``. The authors typically recommend replacing non-diagonal ``\lambda`` with ``\mathrm{det}(\lambda)^{\frac{1}{p}}I``, which often provides a reasonable approximation, as there is additional computational expense through solving this un-batched system of equations.
+
+!!! note "The nonsquare system"
+    If one chooses to solve for ``R``, note that it is also only defined for dimensions ``m < np``. For stability we also perform the following: we use a truncated SVD for when the rank of the system is less than ``m``, and we also symmetrize the resulting matrix.
+    
 ```julia
 rfm = RandomFeatureMethod(
     vf;
@@ -133,9 +141,6 @@ One can select batch sizes to balance the space-time (memory-process) trade-off.
     The problem is ill-conditioned without regularization.
     If you encounters a Singular or Positive-definite exceptions, try increasing the constant scaling `regularization`
 
-!!! note "Positive-Definite regularizer"
-    There is additional computational expense involved in using a non-diagonal ``\lambda``, though currently the authors do not recommend this approach, because currently one must compute the right inverse of ``\Phi^*`` directly (expensive) with calls to `pinv()` and this cannot be batched. It is also only defined for dimensions ``m < np``.
-    Instead the authors typically recommend replacing non-diagonal ``\lambda`` with ``\frac{\mathrm{tr}(\lambda)}{p}I``, which often provides a reasonable approximation.
 
 
 The solve for ``\beta`` occurs in the `fit` method

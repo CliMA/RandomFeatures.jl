@@ -65,9 +65,9 @@ function RandomFeatureMethod(
         end
     else
         if !isposdef(regularization) #check positive definiteness
-            tr_scaled = abs(1.0 / get_output_dim(random_feature) * tr(regularization))
-            @warn "input regularization matrix is not positive definite, replacing with uniform scaling of size $(tr_scaled)"
-            lambda = tr_scaled * I
+            tol = 1e12 * eps() #MAGIC NUMBER
+            lambda = posdef_correct(regularization, tol = tol)
+            @warn "input regularization matrix is not positive definite, replacing with nearby positive definite matrix with minimum eigenvalue $tol"
         else
 
             lambda = regularization
@@ -190,18 +190,33 @@ function fit(
     if build_regularization
         if output_dim * n_data < n_features
             @info(
-                "pos-def regularization formulation ill-defined for output_dim ($output_dim) * n_data ($n_data) < n_feature ($n_features). \n Treating it as if regularization was a constant diagonal size tr(regularization_matrix) / output_dim"
+                "pos-def regularization formulation ill-defined for output_dim ($output_dim) * n_data ($n_data) < n_feature ($n_features). \n Treating it as if regularization was a uniform scaling size det(regularization_matrix)^{1 / output_dim}"
             )
-            lambda_new = tr(lambda) / output_dim * I
+            lambda_new = det(lambda)^(1 / output_dim) * I
         else
-            # COMPLEXITY IS EXPENSIVE ~ m(np)^2 ? and not obvious to batch!!
+
+            # solve the rank-deficient linear system with SVD
             nonbatch_feature = build_features(rf, input) # n_data (N) x output_dim(P) x n_features(M)  
 
-            #build making I_mxm right pseudoinv "Phi^T", viewed as M x NP 
-            inv_feature = pinv(reshape(nonbatch_feature, (n_data * output_dim, n_features))) # pinv( np, i ) = i, np
-            inv_feature = reshape(inv_feature, (n_features, n_data, output_dim))# i, np -> i, n, p
-            # the pinv of m x np is right when np > m and left when np < m
-            @tullio lambda_new[i, j] += nonbatch_feature[n, p, i] * lambda[p, q] * inv_feature[j, n, q]
+            lambdaT_times_phi = zeros(size(nonbatch_feature))
+            @tullio lambdaT_times_phi[n, p, i] = lambda[q, p] * nonbatch_feature[n, q, i] # (I ⊗ Λᵀ) Φ
+
+            #reshape to stacks columns, i.e n,p -> np does (n,...,n) p times
+            rhs = reshape(permutedims(lambdaT_times_phi, (2, 1, 3)), (n_data * output_dim, n_features))
+            lhs = reshape(permutedims(nonbatch_feature, (2, 1, 3)), (n_data * output_dim, n_features))
+
+            # Solve Φ Bᵀ = (I ⊗ Λᵀ) Φ and transpose for B (=lambda_new)
+            lhs_svd = svd(lhs) #stable solve of rank deficient systems with SVD
+            th_idx = 1:sum(lhs_svd.S .> 1e-2 * maximum(lhs_svd.S))
+            lambda_new =
+                lhs_svd.V[:, th_idx] *
+                Diagonal(1 ./ lhs_svd.S[th_idx]) *
+                permutedims(lhs_svd.U[:, th_idx], (2, 1)) *
+                rhs
+
+            #make positive definite
+            lambda_new = posdef_correct(lambda_new)
+
         end
     end
 

@@ -159,6 +159,11 @@ function calculate_mean_cov_and_coeffs(
     # sizes (output_dim x n_test), (output_dim x output_dim x n_test) 
     scaled_coeffs = sqrt(1 / n_features) * get_coeffs(fitted_features)
 
+    reg = get_regularization(fitted_features)
+    #    if !isa(reg, UniformScaling)
+    #        println("diag of reg: ",diag(reg))
+    #        println("det of reg: ", det(reg))
+    #    end
     if decomp_type == "chol"
         chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
         complexity = 2 * sum(log.(diag(chol_fac)))
@@ -304,19 +309,18 @@ n_data = 100
 x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
 
 # diagonal noise
-#cov_mat = Diagonal((5e-2)^2*ones(output_dim))
+cov_mat = Diagonal((5e-2)^2 * ones(output_dim))
 #cov_mat = (5e-2)^2*I
 # correlated noise
-cov_mat = Tridiagonal((5e-3) * ones(2), (2e-2) * ones(3), (5e-3) * ones(2))
+#cov_mat = convert(Matrix,Tridiagonal((5e-3) * ones(2), (2e-2) * ones(3), (5e-3) * ones(2)))
 
 noise_dist = MvNormal(zeros(output_dim), cov_mat)
 noise = rand(rng, noise_dist, n_data)
 
 # simple regularization
-lambda = tr(cov_mat) / output_dim * I
+lambda = exp((1 / output_dim) * sum(log.(eigvals(cov_mat)))) * I
 # more complex
 #lambda = cov_mat
-
 
 
 y = ftest_1d_to_3d(x) + noise
@@ -324,8 +328,8 @@ io_pairs = PairedDataContainer(x, y)
 
 ## Define Hyperpriors for EKP
 
-μ_l = 2.0
-σ_l = 3.0
+μ_l = 5.0
+σ_l = 5.0
 # prior for non radial problem
 n_l = Int(0.5 * input_dim * (input_dim + 1)) + Int(0.5 * output_dim * (output_dim + 1))
 n_l += (input_dim > 1 && output_dim > 1) ? 2 : 0
@@ -335,12 +339,14 @@ priors = prior_lengthscale
 println("number of hyperparameters to train: ", n_l)
 
 # estimate the noise from running many RFM sample costs at the mean values
-batch_sizes = Dict("train" => 600, "test" => 600, "feature" => 600)
+batch_sizes = Dict("train" => 0, "test" => 0, "feature" => 0)
 n_train = Int(floor(0.8 * n_data))
 n_test = n_data - n_train
-n_features = Int(floor(2 * n_data))
+n_features_opt = Int(floor(2 * n_train))
+#n_features = Int(floor(2 * n_data))
 # RF will perform poorly when n_features is close to n_train
-@assert(!(n_features == n_train)) #
+@assert(!(n_features_opt == n_train)) #
+
 
 repeats = 1
 
@@ -357,7 +363,7 @@ if CALC_TRUTH
         rng,
         repeat([μ_l], n_l), # take mean values
         lambda,
-        n_features,
+        n_features_opt,
         batch_sizes,
         io_pairs,
         n_samples,
@@ -395,13 +401,13 @@ params_init = transform_unconstrained_to_constrained(priors, initial_params)#[1,
 println("Prior gives parameters between: [$(minimum(params_init)),$(maximum(params_init))]")
 
 if isa(lambda, Real)
-    min_complexity = n_features * log(lambda)
+    min_complexity = n_features_opt * log(lambda)
     data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
 elseif isa(lambda, UniformScaling)
-    min_complexity = n_features * log(lambda.λ)
+    min_complexity = n_features_opt * log(lambda.λ)
     data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
 else
-    min_complexity = n_features / output_dim * 2 * sum(log.(diag(cholesky(lambda).L)))
+    min_complexity = (n_features_opt / output_dim) * 2 * sum(log.(diag(cholesky(lambda).L)))
     # TODO: SOLVE EVAL PROBLEM TO FIT WITH THIS DATA. the following is just a fudge to get reasonable scaling and not a global truth
     min_complexity *= 1
 
@@ -418,8 +424,15 @@ for i in 1:N_iter
 
     #get parameters:
     lvec = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
-    g_ens, _ =
-        calculate_ensemble_mean_and_coeffnorm(rng, lvec, lambda, n_features, batch_sizes, io_pairs, repeats = repeats)
+    g_ens, _ = calculate_ensemble_mean_and_coeffnorm(
+        rng,
+        lvec,
+        lambda,
+        n_features_opt,
+        batch_sizes,
+        io_pairs,
+        repeats = repeats,
+    )
 
     if i % update_cov_step == 0 # to update cov if required
 
@@ -429,7 +442,7 @@ for i in 1:N_iter
             rng,
             mean(constrained_u, dims = 2)[:, 1], # take mean values
             lambda,
-            n_features,
+            n_features_opt,
             batch_sizes,
             io_pairs,
             n_samples,
@@ -483,7 +496,7 @@ println("Optimal lengthscales: $(final_lvec)")
 println("**********")
 
 
-rfm = RFM_from_hyperparameters(rng, final_lvec, lambda, n_features, batch_sizes, input_dim, output_dim)
+rfm = RFM_from_hyperparameters(rng, final_lvec, lambda, n_features_test, batch_sizes, input_dim, output_dim)
 fitted_features = fit(rfm, io_pairs_test, decomposition_type = "cholesky")
 
 if PLOT_FLAG
