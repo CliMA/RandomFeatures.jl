@@ -8,17 +8,17 @@ Contains information to build and sample RandomFeatures mapping from N-D -> 1-D
 
 $(TYPEDFIELDS)
 """
-struct ScalarFeature <: RandomFeature
+struct ScalarFeature{S <: AbstractString, SF <: ScalarFunction} <: RandomFeature
     "Number of features"
     n_features::Int
     "Sampler of the feature distribution"
     feature_sampler::Sampler
     "ScalarFunction mapping R -> R"
-    scalar_function::ScalarFunction
+    scalar_function::SF
     "Current `Sample` from sampler"
     feature_sample::ParameterDistribution
     "hyperparameters in Feature (and not in Sampler)"
-    feature_parameters::Union{Dict, Nothing}
+    feature_parameters::Union{Dict{S}, Nothing}
 end
 
 # common constructors
@@ -30,9 +30,9 @@ basic constructor for a `ScalarFeature'
 function ScalarFeature(
     n_features::Int,
     feature_sampler::Sampler,
-    scalar_fun::ScalarFunction;
-    feature_parameters::Dict = Dict("sigma" => 1),
-)
+    scalar_fun::SF;
+    feature_parameters::Dict{S} = Dict("sigma" => 1),
+) where {S <: AbstractString, SF <: ScalarFunction}
     if "xi" ∉ get_name(get_parameter_distribution(feature_sampler))
         throw(
             ArgumentError(
@@ -49,7 +49,7 @@ function ScalarFeature(
 
     samp = sample(feature_sampler, n_features)
 
-    return ScalarFeature(n_features, feature_sampler, scalar_fun, samp, feature_parameters)
+    return ScalarFeature{S, SF}(n_features, feature_sampler, scalar_fun, samp, feature_parameters)
 end
 
 #these call the above constructor
@@ -58,7 +58,11 @@ $(TYPEDSIGNATURES)
 
 Constructor for a `ScalarFeature` with cosine features
 """
-function ScalarFourierFeature(n_features::Int, sampler::Sampler; feature_parameters::Dict = Dict("sigma" => sqrt(2.0)))
+function ScalarFourierFeature(
+    n_features::Int,
+    sampler::Sampler;
+    feature_parameters::Dict{S} = Dict("sigma" => sqrt(2.0)),
+) where {S <: AbstractString}
     return ScalarFeature(n_features, sampler, Cosine(); feature_parameters = feature_parameters)
 end
 
@@ -67,7 +71,12 @@ $(TYPEDSIGNATURES)
 
 Constructor for a `ScalarFeature` with activation-function features (default ReLU)
 """
-function ScalarNeuronFeature(n_features::Int, sampler::Sampler; activation_fun::ScalarActivation = Relu(), kwargs...)
+function ScalarNeuronFeature(
+    n_features::Int,
+    sampler::Sampler;
+    activation_fun::SA = Relu(),
+    kwargs...,
+) where {SA <: ScalarActivation}
     return ScalarFeature(n_features, sampler, activation_fun; kwargs...)
 end
 
@@ -78,9 +87,9 @@ builds features (possibly batched) from an input matrix of size (input dimension
 """
 function build_features(
     rf::ScalarFeature,
-    inputs::AbstractMatrix, # input_dim x n_sample
-    batch_feature_idx::AbstractVector{Int},
-)
+    inputs::M, # input_dim x n_sample
+    batch_feature_idx::V,
+) where {M <: AbstractMatrix, V <: AbstractVector}
     #    inputs = permutedims(inputs_t, (2, 1)) # n_sample x input_dim
 
     # build: sigma * scalar_function(xi . input + b)
@@ -106,7 +115,8 @@ function build_features(
     return reshape(features, size(features, 1), 1, size(features, 2))
 end
 
-build_features(rf::ScalarFeature, inputs::AbstractMatrix) = build_features(rf, inputs, collect(1:get_n_features(rf)))
+build_features(rf::ScalarFeature, inputs::M) where {M <: AbstractMatrix} =
+    build_features(rf, inputs, collect(1:get_n_features(rf)))
 
 """
 $(TYPEDSIGNATURES)

@@ -36,13 +36,14 @@ $(TYPEDSIGNATURES)
 
 apply the scalar function `sf` pointwise to vectors or matrices
 """
-apply_scalar_function(sf::ScalarFunction, r::AbstractArray) = apply_scalar_function.(Ref(sf), r) # Ref(sf) treats sf as a scalar for the broadcasting
+apply_scalar_function(sf::SF, r::A) where {SF <: ScalarFunction, A <: AbstractArray} =
+    apply_scalar_function.(Ref(sf), r) # Ref(sf) treats sf as a scalar for the broadcasting
 
 """
 $(TYPEDEF)
 """
 struct Cosine <: ScalarFunction end
-function apply_scalar_function(sf::Cosine, r::Real)
+function apply_scalar_function(sf::Cosine, r::FT) where {FT <: AbstractFloat}
     return cos(r)
 end
 
@@ -58,7 +59,7 @@ abstract type ScalarActivation <: ScalarFunction end
 $(TYPEDEF)
 """
 struct Relu <: ScalarActivation end
-function apply_scalar_function(sa::Relu, r::Real)
+function apply_scalar_function(sa::Relu, r::FT) where {FT <: AbstractFloat}
     return max(0, r)
 end
 
@@ -66,7 +67,7 @@ end
 $(TYPEDEF)
 """
 struct Gelu <: ScalarActivation end
-function apply_scalar_function(sa::Gelu, r::Real)
+function apply_scalar_function(sa::Gelu, r::FT) where {FT <: AbstractFloat}
     cdf = 0.5 * (1.0 + erf(r / sqrt(2.0)))
     return r * cdf
 end
@@ -85,7 +86,7 @@ function heaviside(x, y)
     end
 end
 
-function apply_scalar_function(sa::Heaviside, r::Real)
+function apply_scalar_function(sa::Heaviside, r::FT) where {FT <: AbstractFloat}
     return heaviside(r, 0.5)
 end
 
@@ -93,7 +94,7 @@ end
 $(TYPEDEF)
 """
 struct Sawtooth <: ScalarActivation end
-function apply_scalar_function(sa::Sawtooth, r::Real)
+function apply_scalar_function(sa::Sawtooth, r::FT) where {FT <: AbstractFloat}
     return max(0, min(2 * r, 2 - 2 * r))
 end
 
@@ -101,7 +102,7 @@ end
 $(TYPEDEF)
 """
 struct Softplus <: ScalarActivation end
-function apply_scalar_function(sa::Softplus, r::Real)
+function apply_scalar_function(sa::Softplus, r::FT) where {FT <: AbstractFloat}
     return log(1 + exp(-abs(r))) + max(r, 0)
 end
 
@@ -109,7 +110,7 @@ end
 $(TYPEDEF)
 """
 struct Tansig <: ScalarActivation end
-function apply_scalar_function(sa::Tansig, r::Real)
+function apply_scalar_function(sa::Tansig, r::FT) where {FT <: AbstractFloat}
     return tanh(r)
 end
 
@@ -117,47 +118,47 @@ end
 $(TYPEDEF)
 """
 struct Sigmoid <: ScalarActivation end
-function apply_scalar_function(sa::Sigmoid, r::Real)
+function apply_scalar_function(sa::Sigmoid, r::FT) where {FT <: AbstractFloat}
     return 1 / (1 + exp(-r))
 end
 
 """
 $(TYPEDEF)
 """
-@kwdef struct Elu <: ScalarActivation
-    alpha::Real = 1.0
+@kwdef struct Elu{FT <: AbstractFloat} <: ScalarActivation
+    alpha::FT = 1.0
 end
-function apply_scalar_function(sa::Elu, r::Real)
+function apply_scalar_function(sa::Elu, r::FT) where {FT <: AbstractFloat}
     return r > 0 ? r : sa.alpha * (exp(r) - 1.0)
 end
 
 """
 $(TYPEDEF)
 """
-@kwdef struct Lrelu <: ScalarActivation
-    alpha::Real = 0.01
+@kwdef struct Lrelu{FT <: AbstractFloat} <: ScalarActivation
+    alpha::FT = 0.01
 end
-function apply_scalar_function(sa::Lrelu, r::Real)
+function apply_scalar_function(sa::Lrelu, r::FT) where {FT <: AbstractFloat}
     return r > 0 ? r : sa.alpha * r
 end
 
 """
 $(TYPEDEF)
 """
-@kwdef struct Selu <: ScalarActivation
-    alpha::Real = 1.67326
-    lambda::Real = 1.0507
+@kwdef struct Selu{FT <: AbstractFloat} <: ScalarActivation
+    alpha::FT = 1.67326
+    lambda::FT = 1.0507
 end
-function apply_scalar_function(sa::Selu, r::Real)
+function apply_scalar_function(sa::Selu, r::FT) where {FT <: AbstractFloat}
     return r > 0 ? sa.lambda * r : sa.lambda * sa.alpha * (exp(r) - 1.0)
 end
 
 """
 $(TYPEDEF)
 """
-@kwdef struct SmoothHeaviside <: ScalarActivation
-    epsilon::Real = 0.01
+@kwdef struct SmoothHeaviside{FT <: AbstractFloat} <: ScalarActivation
+    epsilon::FT = 0.01
 end
-function apply_scalar_function(sa::SmoothHeaviside, r::Real)
+function apply_scalar_function(sa::SmoothHeaviside, r::FT) where {FT <: AbstractFloat}
     return 1 / 2 + (1 / pi) * atan(r / sa.epsilon)
 end

@@ -8,7 +8,7 @@ Contains information to build and sample RandomFeatures mapping from N-D -> M-D
 
 $(TYPEDFIELDS)
 """
-struct VectorFeature <: RandomFeature
+struct VectorFeature{S <: AbstractString, SF <: ScalarFunction} <: RandomFeature
     "Number of features"
     n_features::Int
     "Dimension of output"
@@ -16,11 +16,11 @@ struct VectorFeature <: RandomFeature
     "Sampler of the feature distribution"
     feature_sampler::Sampler
     "ScalarFunction mapping R -> R"
-    scalar_function::ScalarFunction
+    scalar_function::SF
     "Current `Sample` from sampler"
     feature_sample::ParameterDistribution
     "hyperparameters in Feature (and not in Sampler)"
-    feature_parameters::Union{Dict, Nothing}
+    feature_parameters::Union{Dict{String}, Nothing}
 end
 
 # common constructors
@@ -33,9 +33,9 @@ function VectorFeature(
     n_features::Int,
     output_dim::Int,
     feature_sampler::Sampler,
-    scalar_fun::ScalarFunction;
-    feature_parameters::Dict = Dict("sigma" => 1),
-)
+    scalar_fun::SF;
+    feature_parameters::Dict{S} = Dict("sigma" => 1),
+) where {S <: AbstractString, SF <: ScalarFunction}
 
     if "xi" ∉ get_name(get_parameter_distribution(feature_sampler))
         throw(
@@ -53,7 +53,7 @@ function VectorFeature(
 
     samp = sample(feature_sampler, n_features)
 
-    return VectorFeature(n_features, output_dim, feature_sampler, scalar_fun, samp, feature_parameters)
+    return VectorFeature{S, SF}(n_features, output_dim, feature_sampler, scalar_fun, samp, feature_parameters)
 end
 
 #these call the above constructor
@@ -66,8 +66,8 @@ function VectorFourierFeature(
     n_features::Int,
     output_dim::Int,
     sampler::Sampler;
-    feature_parameters::Dict = Dict("sigma" => sqrt(2.0)),
-)
+    feature_parameters::Dict{S} = Dict("sigma" => sqrt(2.0)),
+) where {S <: AbstractString}
     return VectorFeature(n_features, output_dim, sampler, Cosine(); feature_parameters = feature_parameters)
 end
 
@@ -93,9 +93,9 @@ builds features (possibly batched) from an input matrix of size (input dimension
 """
 function build_features(
     rf::VectorFeature,
-    inputs::AbstractMatrix, # input_dim x n_sample
-    batch_feature_idx::AbstractVector{Int},
-)
+    inputs::M, # input_dim x n_sample
+    batch_feature_idx::V,
+) where {M <: AbstractMatrix, V <: AbstractVector}
     # build: sigma * scalar_function(xi * input + b)
     samp = get_feature_sample(rf)
 
@@ -106,9 +106,14 @@ function build_features(
     sampler = get_feature_sampler(rf)
     pd = get_parameter_distribution(sampler)
     xi_size = size(get_distribution(pd)["xi"])
-    xi = reshape(xi_flat, xi_size..., size(xi_flat, 2)) # in x out x n_feature_batch
+    if length(xi_size) > 1
+        xi = reshape(xi_flat, (xi_size[1], xi_size[2], size(xi_flat, 2))) # in x out x n_feature_batch
+    else
+        xi = reshape(xi_flat, xi_size[1], 1, size(xi_flat, 2)) # in x out x n_feature_batch
+    end
 
-    @tullio features[n, p, b] := inputs[d, n] * xi[d, p, b] # n_samples x output_dim x n_feature_batch
+    features = zeros(size(inputs, 2), size(xi, 2), size(xi, 3))
+    @tullio features[n, p, b] = inputs[d, n] * xi[d, p, b] # n_samples x output_dim x n_feature_batch
 
     is_biased = "bias" ∈ get_name(samp)
     if is_biased
@@ -117,15 +122,16 @@ function build_features(
     end
 
     sf = get_scalar_function(rf)
-    features = apply_scalar_function(sf, features)
+    features .= apply_scalar_function.(Ref(sf), features)
 
     sigma = get_feature_parameters(rf)["sigma"] # scalar
-    features *= sigma
+    features .*= sigma
 
     return features # n_sample x n_feature_batch x output_dim
 end
 
-build_features(rf::VectorFeature, inputs::AbstractMatrix) = build_features(rf, inputs, collect(1:get_n_features(rf)))
+build_features(rf::VectorFeature, inputs::M) where {M <: AbstractMatrix} =
+    build_features(rf, inputs, collect(1:get_n_features(rf)))
 
 """
 $(TYPEDSIGNATURES)

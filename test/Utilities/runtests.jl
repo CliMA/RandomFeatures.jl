@@ -54,7 +54,7 @@ using RandomFeatures.Utilities
     xchol = Decomposition(x, "cholesky")
     xpinv = Decomposition(x, "pinv")
 
-    xbad = [1 1; 1 0] # not pos def
+    xbad = [1.0 1.0; 1.0 0.0] # not pos def
     xbadchol = Decomposition(xbad, "cholesky")
     @test isposdef(get_full_matrix(xbadchol))
 
@@ -70,7 +70,7 @@ using RandomFeatures.Utilities
     @test xcholsolve ≈ xsolve
     @test xpinvsolve ≈ xsolve
 
-    y = [x for i in 1:N, x in 1:N]
+    y = Float64[x for i in 1:N, x in 1:N]
     ypinv = Decomposition(y, "pinv")
     @test get_decomposition(ypinv) == pinv(y)
     @test get_parametric_type(ypinv) == PseInv
