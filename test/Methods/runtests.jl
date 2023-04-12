@@ -127,7 +127,7 @@ seed = 2023
 
             fitted_features = fit(rfm, io_pairs)
             decomp = get_feature_factors(fitted_features)
-            @test typeof(decomp) == Decomposition{Factor}
+            @test get_parametric_type(decomp) == Factor
             @test typeof(get_decomposition(decomp)) <: SVD
 
             coeffs = get_coeffs(fitted_features)
@@ -143,6 +143,15 @@ seed = 2023
 
             # test prediction with different features
             pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
+            if exp_idx == 1
+                pmtmp = ones(size(pred_mean))
+                pctmp = ones(size(pred_cov))
+                tol = 1e2 * eps()
+                predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp)
+
+                @test all(isapprox.(pred_mean, pmtmp, atol = tol))
+                @test all(isapprox.(pred_cov, pctmp, atol = tol))
+            end
 
             rfm_relu = RandomFeatureMethod(snf, batch_sizes = batch_sizes, regularization = lambda)
             fitted_relu_features = fit(rfm_relu, io_pairs)
@@ -306,6 +315,14 @@ seed = 2023
         #println("weighted L2 error: ", priorweightedL2err)
 
         pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
+        # test in-place calculations
+        pmtmp = ones(size(pred_mean))
+        pctmp = ones(size(pred_cov))
+        tol = 1e2 * eps()
+        predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp)
+        @test all(isapprox.(pred_mean, pmtmp, atol = tol))
+        @test all(isapprox.(pred_cov, pctmp, atol = tol))
+
         L2err = sqrt(sum((ytest_nonoise - pred_mean) .^ 2))
         weightedL2err = sqrt(sum(1 ./ (pred_cov .+ noise_sd^2) .* (ytest_nonoise - pred_mean) .^ 2))
         println("Posterior for nd->1d")
@@ -509,6 +526,15 @@ seed = 2023
             #        println("weighted L2 error: ", priorweightedL2err)
 
             pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
+            if exp_name == "diagonal-lambdamat"
+                pmtmp = ones(size(pred_mean))
+                pctmp = ones(size(pred_cov))
+                tol = 1e2 * eps()
+                predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp)
+                @test all(isapprox.(pred_mean, pmtmp, atol = tol))
+                @test all(isapprox.(pred_cov, pctmp, atol = tol))
+            end
+
             #println(pred_mean)
             L2err = sqrt.(sum((ytest_nonoise - pred_mean) .^ 2))
             weightedL2err = [0.0]

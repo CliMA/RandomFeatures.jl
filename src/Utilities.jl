@@ -22,7 +22,7 @@ produces batched sub-array views of size `batch_size` along dimension `dims`.
     this creates views not copies. Modifying a batch will modify the original!
 
 """
-function batch_generator(array::AbstractArray, batch_size::Int; dims::Int = 1)
+function batch_generator(array::A, batch_size::Int; dims::Int = 1) where {A <: AbstractArray}
     if batch_size == 0
         return [array]
     end
@@ -44,7 +44,7 @@ end
 
 Makes square matrix `mat` positive definite, by symmetrizing and bounding the minimum eigenvalue below by `tol`
 """
-function posdef_correct(mat::AbstractMatrix; tol::Real = 1e12 * eps())
+function posdef_correct(mat::M; tol::Real = 1e12 * eps()) where {M <: AbstractMatrix}
     out = 0.5 * (mat + permutedims(mat, (2, 1))) #symmetrize
     out += (abs(minimum(eigvals(out))) + tol) * I #add to diag
     return out
@@ -75,18 +75,20 @@ Stores a matrix along with a decomposition `T=Factor`, or pseudoinverse `T=PseIn
 
 $(TYPEDFIELDS)
 """
-struct Decomposition{T}
+struct Decomposition{T, M <: AbstractMatrix, MorF <: Union{AbstractMatrix, Factorization}}
     "The original matrix"
-    full_matrix::AbstractMatrix
+    full_matrix::M
     "The matrix decomposition, or pseudoinverse"
-    decomposition::Union{AbstractMatrix, Factorization}
+    decomposition::MorF
 end
 
-function Decomposition(mat::AbstractMatrix, method::AbstractString; nugget::Real = 1e12 * eps())
+function Decomposition(
+    mat::M,
+    method::S;
+    nugget::R = 1e12 * eps(),
+) where {M <: AbstractMatrix, S <: AbstractString, R <: Real}
     if method == "pinv"
-        decomposition = pinv(mat)
-        return Decomposition{PseInv}(mat, decomposition)
-
+        return Decomposition{PseInv, M, M}(mat, pinv(mat))
     else
         if !isdefined(LinearAlgebra, Symbol(method))
             throw(
@@ -97,7 +99,12 @@ function Decomposition(mat::AbstractMatrix, method::AbstractString; nugget::Real
                 ),
             )
         else
+            # Don't use in-place, as we need full mat later too
+            #            if isdefined(LinearAlgebra, Symbol(method*"!"))
+            #                f = getfield(LinearAlgebra, Symbol(method*"!"))
+            #            else
             f = getfield(LinearAlgebra, Symbol(method))
+            #            end
 
             if method == "cholesky"
                 if !isposdef(mat)
@@ -106,8 +113,8 @@ function Decomposition(mat::AbstractMatrix, method::AbstractString; nugget::Real
                 end
 
             end
-            decomposition = f(mat)
-            return Decomposition{Factor}(mat, decomposition)
+
+            return Decomposition{Factor, typeof(mat), Base.return_types(f, (typeof(mat),))[1]}(mat, f(mat))
         end
     end
 end
@@ -130,14 +137,14 @@ $(TYPEDSIGNATURES)
 
 get the parametric type
 """
-get_parametric_type(d::Decomposition{T}) where {T} = T
+get_parametric_type(d::Decomposition{T, M}) where {T, M <: Union{AbstractMatrix, Factorization}} = T
 
 """
 $(TYPEDSIGNATURES)
 
 Solve the linear system based on `Decomposition` type
 """
-function linear_solve(d::Decomposition, rhs::AbstractArray, ::Type{Factor})
+function linear_solve(d::Decomposition, rhs::A, ::Type{Factor}) where {A <: AbstractArray}
     #    return get_decomposition(d) \ rhs
     M, N, P = size(rhs)
     x = zeros(M, N, P)
@@ -146,13 +153,12 @@ function linear_solve(d::Decomposition, rhs::AbstractArray, ::Type{Factor})
     end
     return x
 end
-function linear_solve(d::Decomposition, rhs::AbstractArray, ::Type{PseInv})
+function linear_solve(d::Decomposition, rhs::A, ::Type{PseInv}) where {A <: AbstractArray}
     #get_decomposition(d) * rhs
     @tullio x[m, n, p] := get_decomposition(d)[m, i] * rhs[i, n, p]
     return x
 end
 
-linear_solve(d::Decomposition, rhs::AbstractArray) =
-    linear_solve(d::Decomposition, rhs::AbstractArray, get_parametric_type(d))
+linear_solve(d::Decomposition, rhs::A) where {A <: AbstractArray} = linear_solve(d, rhs, get_parametric_type(d))
 
 end

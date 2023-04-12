@@ -13,11 +13,11 @@ Wraps the parameter distributions used to sample random features
 
 $(TYPEDFIELDS)
 """
-struct Sampler
+struct Sampler{RNG <: AbstractRNG}
     "A probability distribution, possibly with constraints"
     parameter_distribution::ParameterDistribution
     "A random number generator state"
-    rng::AbstractRNG
+    rng::RNG
 end
 
 """
@@ -28,13 +28,13 @@ basic constructor for a `Sampler`
 function FeatureSampler(
     parameter_distribution::ParameterDistribution,
     bias_distribution::Union{ParameterDistribution, Nothing};
-    rng::AbstractRNG = Random.GLOBAL_RNG,
-)
+    rng::RNG = Random.GLOBAL_RNG,
+) where {RNG <: AbstractRNG}
     if isnothing(bias_distribution) # no bias
         return Sampler(parameter_distribution, rng)
     else
         pd = combine_distributions([parameter_distribution, bias_distribution])
-        return Sampler(pd, rng)
+        return Sampler{RNG}(pd, rng)
     end
 end
 
@@ -46,9 +46,9 @@ one can conveniently specify the bias as a uniform-shift `uniform_shift_bounds` 
 function FeatureSampler(
     parameter_distribution::ParameterDistribution,
     output_dim::Int;
-    uniform_shift_bounds::AbstractVector = [0, 2 * pi],
-    rng::AbstractRNG = Random.GLOBAL_RNG,
-)
+    uniform_shift_bounds::V = [0, 2 * pi],
+    rng::RNG = Random.GLOBAL_RNG,
+) where {RNG <: AbstractRNG, V <: AbstractVector}
 
     # adds a uniform distribution to the parameter distribution
     if output_dim == 1
@@ -69,7 +69,7 @@ function FeatureSampler(
     unif_pd = ParameterDistribution(unif_dict)
 
     pd = combine_distributions([parameter_distribution, unif_pd])
-    return Sampler(pd, rng)
+    return Sampler{RNG}(pd, rng)
 end
 
 FeatureSampler(parameter_distribution::ParameterDistribution; kwargs...) =
@@ -94,21 +94,35 @@ $(TYPEDSIGNATURES)
 
 samples the distribution within `s`, `n_draws` times using a random number generator `rng`. Can be called without `rng` (defaults to `s.rng`) or `n_draws` (defaults to `1`)
 """
-function sample(rng::AbstractRNG, s::Sampler, n_draws::Int)
+function sample(rng::RNG, s::Sampler, n_draws::Int) where {RNG <: AbstractRNG}
     pd = get_parameter_distribution(s)
     # TODO: Support for Matrix Distributions, Flattening them for now.
-    # until EKP.ParameterDistributions we sample Julia distributions directly
     if any([length(size(get_distribution(d))) > 1 for d in pd.distribution])
-        # get [ [in x out] x samples, [out x samples]]
+        # samps is [ [in x out] x samples, [out x samples]]
         samps = [sample(rng, d, n_draws) for d in pd.distribution]
-        samp_xi = cat(samps[1]..., dims = 3) # [in x out x samples]
+
+        # Faster than cat(samp[1]..., dims = 3)
+        samp_xi = zeros(size(samps[1][1], 1), size(samps[1][1], 2), length(samps[1]))
+        for i in 1:n_draws
+            samp_xi[:, :, i] = samps[1][i]
+        end
         samp_xi = reshape(samp_xi, size(samp_xi, 1) * size(samp_xi, 2), size(samp_xi, 3)) # stacks in+in+... to make a  (in x out) x samples
-        samp_bias = samps[2] # out x samples 
-        samp = cat(samp_xi, samp_bias, dims = 1) # (in x out + out) x 20
+        samp_bias = samps[2] # out x samples
+
+        # Faster than cat(samp_xi, samp_bias, dims = 1)
+        samp = zeros(size(samp_xi, 1) + size(samp_bias, 1), size(samp_xi, 2))
+        samp[1:size(samp_xi, 1), :] = samp_xi
+        samp[(size(samp_xi, 1) + 1):end, :] = samp_bias
+
     else
-        samp = cat([sample(rng, d, n_draws) for d in pd.distribution]..., dims = 1)
+        # Faster than cat([sample(rng, d, n_draws) for d in pd.distribution]..., dims = 1) for many distributions
+        batches = batch(pd) # get indices of dist
+        n = ndims(pd)
+        samp = zeros(n, n_draws)
+        for (i, d) in enumerate(pd.distribution)
+            samp[batches[i], :] = sample(rng, d, n_draws)
+        end
     end
-    #samp = sample(rng, pd, n_draws) # vec(univariate), mat(multivariate) or vec of mats (matrixvariate)
     constrained_samp = transform_unconstrained_to_constrained(pd, samp)
     #now create a Samples-type distribution from the samples
     s_names = get_name(pd)
@@ -122,7 +136,7 @@ function sample(rng::AbstractRNG, s::Sampler, n_draws::Int)
 end
 
 sample(s::Sampler, n_draws::Int) = sample(s.rng, s, n_draws)
-sample(rng::AbstractRNG, s::Sampler) = sample(rng, s, 1)
+sample(rng::RNG, s::Sampler) where {RNG <: AbstractRNG} = sample(rng, s, 1)
 sample(s::Sampler) = sample(s.rng, s, 1)
 
 
