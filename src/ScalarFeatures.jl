@@ -97,19 +97,17 @@ function build_features(
     xi = get_distribution(samp)["xi"][:, batch_feature_idx] # dim_inputs x n_features
     #    features = inputs * xi[:, batch_feature_idx] # n_samples x n_features
     @tullio features[n, b] := inputs[d, n] * xi[d, b] # n_samples x output_dim x n_feature_batch
-
     is_biased = "bias" ∈ get_name(samp)
     if is_biased
         bias = get_distribution(samp)["bias"][1, batch_feature_idx] # 1 x n_features
-        #        features .+= bias[:, batch_feature_idx]
         @tullio features[n, b] += bias[b]
     end
 
     sf = get_scalar_function(rf)
-    features = apply_scalar_function(sf, features)
+    features .= apply_scalar_function.(Ref(sf), features) # BOTTLENECK OF build_features.
 
     sigma = get_feature_parameters(rf)["sigma"] # scalar
-    features *= sigma
+    @. features *= sigma
 
     #consistent output shape with vector case, by putting output_dim = 1 in middle dimension
     return reshape(features, size(features, 1), 1, size(features, 2))

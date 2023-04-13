@@ -128,7 +128,7 @@ seed = 2023
             fitted_features = fit(rfm, io_pairs)
             decomp = get_feature_factors(fitted_features)
             @test get_parametric_type(decomp) == Factor
-            @test typeof(get_decomposition(decomp)) <: SVD
+            @test typeof(get_decomposition(decomp)) <: Cholesky
 
             coeffs = get_coeffs(fitted_features)
 
@@ -144,10 +144,11 @@ seed = 2023
             # test prediction with different features
             pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
             if exp_idx == 1
-                pmtmp = ones(size(pred_mean))
-                pctmp = ones(size(pred_cov))
+                pmtmp = zeros(size(pred_mean)) # p x n
+                pctmp = zeros(size(pred_cov)) # p x p x n
+                buffer = zeros(size(pctmp, 3), size(pctmp, 1), n_features) # n x p x m
                 tol = 1e2 * eps()
-                predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp)
+                predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp, buffer)
 
                 @test all(isapprox.(pred_mean, pmtmp, atol = tol))
                 @test all(isapprox.(pred_cov, pctmp, atol = tol))
@@ -308,6 +309,15 @@ seed = 2023
 
         # test prediction with different features
         prior_mean, prior_cov = predict_prior(rfm_batch, xtest) # predict inputs from unfitted features
+
+        # test other prior methods.
+        tol = 1e3 * eps()
+        prior_cov2, features_tmp = predict_prior_cov(rfm_batch, xtest)
+        prior_mean2 = predict_prior_mean(rfm_batch, xtest, features_tmp)
+        @test all(isapprox.(prior_cov, prior_cov2, atol = tol))
+        @test all(isapprox.(prior_mean, prior_mean2, atol = tol))
+
+
         priorL2err = sqrt(sum((ytest_nonoise - prior_mean) .^ 2))
         priorweightedL2err = sqrt(sum(1 ./ (prior_cov .+ noise_sd^2) .* (ytest_nonoise - prior_mean) .^ 2))
         println("Prior for nd->1d")
@@ -318,8 +328,9 @@ seed = 2023
         # test in-place calculations
         pmtmp = ones(size(pred_mean))
         pctmp = ones(size(pred_cov))
+        buffer = zeros(size(pctmp, 3), size(pctmp, 1), n_features) # n x p x m
         tol = 1e2 * eps()
-        predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp)
+        predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp, buffer)
         @test all(isapprox.(pred_mean, pmtmp, atol = tol))
         @test all(isapprox.(pred_cov, pctmp, atol = tol))
 
@@ -466,7 +477,7 @@ seed = 2023
             ],
         ]
         for (cov_mat, lambda, hp, exp_name) in zip(cov_mats, lambdas, hps, exp_names)
-
+            println(exp_name)
             U = ones(1, 1)
             cholV = flat_to_chol(hp[2:(Int(0.5 * output_dim * (output_dim + 1)) + 1)])
             V = hp[1] * (cholV * permutedims(cholV, (2, 1)) + hp[1] * I)
@@ -501,14 +512,13 @@ seed = 2023
             batch_sizes = Dict("train" => 500, "test" => 500, "feature" => 500)
             rfm_batch = RandomFeatureMethod(vff, batch_sizes = batch_sizes, regularization = lambda)
             fitted_batched_features = fit(rfm_batch, io_pairs)
-
             #quick test for the m>np case (changes the regularization)
             if exp_name == "diagonal-lambdamat"
                 vff_tmp = VectorFourierFeature(n_test * output_dim + 1, output_dim, feature_sampler) #m > np
                 rfm_tmp = RandomFeatureMethod(vff_tmp, regularization = lambda)
                 @test_logs (:info,) fit(rfm_tmp, io_pairs)
                 fit_tmp = fit(rfm_tmp, io_pairs)
-                @test fit_tmp.regularization ≈ det(lambda)^(1 / output_dim) * I
+                @test fit_tmp.regularization ≈ exp(1.0 / output_dim * log(det(lambda))) * I
             end
 
             # test prediction L^2 error of mean
@@ -526,13 +536,32 @@ seed = 2023
             #        println("weighted L2 error: ", priorweightedL2err)
 
             pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
-            if exp_name == "diagonal-lambdamat"
-                pmtmp = ones(size(pred_mean))
-                pctmp = ones(size(pred_cov))
-                tol = 1e2 * eps()
-                predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp)
+            # and other internal methods not called by predict
+
+            pred_cov_tmp, features_tmp = predictive_cov(rfm_batch, fitted_batched_features, xtest)
+            pred_mean_tmp = predictive_mean(rfm_batch, fitted_batched_features, xtest, features_tmp)
+
+            tol = 1e2 * eps()
+            @test all(isapprox.(pred_mean, pred_mean_tmp, atol = tol))
+            @test all(isapprox.(pred_cov, pred_cov_tmp, atol = tol))
+
+            if exp_name ∈ ["correlated-lambdaconst", "diagonal-lambdamat"]
+                pmtmp = similar(pred_mean)
+                pctmp = similar(pred_cov)
+                buffer = zeros(size(pctmp, 3), size(pctmp, 1), n_features) # n x p x m
+                predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp, buffer)
                 @test all(isapprox.(pred_mean, pmtmp, atol = tol))
                 @test all(isapprox.(pred_cov, pctmp, atol = tol))
+                # now create features in cov and pass to mean (check these methods)
+                pmtmp2 = similar(pred_mean)
+                pctmp2 = similar(pred_cov)
+                features_tmp = predictive_cov!(rfm_batch, fitted_batched_features, xtest, pctmp2, buffer)
+                predictive_mean!(rfm_batch, fitted_batched_features, xtest, pmtmp2, features_tmp)
+                @test all(isapprox.(pred_mean, pmtmp2, atol = tol))
+                @test all(isapprox.(pred_cov, pctmp2, atol = tol))
+
+
+
             end
 
             #println(pred_mean)

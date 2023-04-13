@@ -18,13 +18,11 @@ api = [
 
 pages = [
     "Home" => "index.md",
-    "Scalar Method" => "setting_up_scalar.md",
-    "Vector Method" => "setting_up_vector.md",
     "Installation instructions" => "installation_instructions.md",
+    "Scalar method" => "setting_up_scalar.md",
+    "Vector method" => "setting_up_vector.md",
+    "Bottlenecks and performance tips" => "parallelism.md",
     "Contributing" => "contributing.md",
-    #    "Samplers" => "Samplers.md",
-    #    "Features" => "Features.md",
-    #    "Methods" => "Methods.md",
     "API" => api,
 ]
 

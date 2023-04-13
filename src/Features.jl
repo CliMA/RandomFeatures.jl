@@ -3,7 +3,8 @@ module Features
 include("ScalarFunctions.jl")
 import StatsBase: sample
 
-using EnsembleKalmanProcesses.ParameterDistributions, DocStringExtensions, RandomFeatures.Samplers, Tullio
+using EnsembleKalmanProcesses.ParameterDistributions,
+    DocStringExtensions, RandomFeatures.Samplers, Tullio, LoopVectorization
 
 abstract type RandomFeature end
 include("ScalarFeatures.jl")
