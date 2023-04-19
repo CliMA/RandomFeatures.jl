@@ -16,8 +16,11 @@ CurrentModule = RandomFeatures.Methods
     get_coeffs
     fit
     predict
+    predict!
     predictive_mean
+    predictive_mean!
     predictive_cov
+    predictive_cov!
     predict_prior
     predict_prior_mean
     predict_prior_cov

@@ -8,6 +8,7 @@ $(EXPORTS)
 module RandomFeatures
 
 using Statistics, LinearAlgebra, DocStringExtensions
+using Tullio, LoopVectorization
 
 # importing parameter distirbutions
 import EnsembleKalmanProcesses: ParameterDistributions, DataContainers

@@ -96,6 +96,7 @@ function build_features(
     inputs::M, # input_dim x n_sample
     batch_feature_idx::V,
 ) where {M <: AbstractMatrix, V <: AbstractVector}
+
     # build: sigma * scalar_function(xi * input + b)
     samp = get_feature_sample(rf)
 
@@ -111,7 +112,6 @@ function build_features(
     else
         xi = reshape(xi_flat, xi_size[1], 1, size(xi_flat, 2)) # in x out x n_feature_batch
     end
-
     features = zeros(size(inputs, 2), size(xi, 2), size(xi, 3))
     @tullio features[n, p, b] = inputs[d, n] * xi[d, p, b] # n_samples x output_dim x n_feature_batch
 
@@ -122,10 +122,9 @@ function build_features(
     end
 
     sf = get_scalar_function(rf)
-    features .= apply_scalar_function.(Ref(sf), features)
-
+    features .= apply_scalar_function.(Ref(sf), features) # BOTTLENECK OF build_features.
     sigma = get_feature_parameters(rf)["sigma"] # scalar
-    features .*= sigma
+    @. features *= sigma
 
     return features # n_sample x n_feature_batch x output_dim
 end

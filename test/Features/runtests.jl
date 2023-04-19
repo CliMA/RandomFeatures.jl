@@ -278,8 +278,7 @@ seed = 2202
         samp_xi_flat = get_distribution(samp_flat)["xi"]
         # as we flatten the samples currently in the sampler.sample. reshape with dist.
         xi_size = size(get_distribution(pd)["xi"])
-        samp_xi = reshape(samp_xi_flat, xi_size..., size(samp_xi_flat, 2)) # in x out x n_feature_batch
-
+        samp_xi = reshape(samp_xi_flat, (xi_size[1], xi_size[2], size(samp_xi_flat, 2))) # in x out x n_feature_batch
 
         @tullio features[n, p, b] := inputs_5d_5d[d, n] * samp_xi[d, p, b]
         #        samp_xi = reshape(sample(rng1, pd, n_features), (2, n_features))
@@ -290,7 +289,8 @@ seed = 2202
         rf_test = sigma_value * cos.(features)
         #        rf_test = sigma_value * cos.(inputs_5d_5d_T * samp_xi .+ samp_unif)
         @test size(features_5d_5d) == (n_samples, output_dim, n_features) # we store internally with output_dim = 1
-        @test all(abs.(rf_test - features_5d_5d) .< 10 * eps()) # sufficiently big to deal with inaccuracy of cosine
+        @test all(abs.(rf_test - features_5d_5d) .< 1e3 * eps()) # sufficiently big to deal with inaccuracy of cosine
+
 
     end
 

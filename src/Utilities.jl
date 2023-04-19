@@ -1,6 +1,6 @@
 module Utilities
 
-using LinearAlgebra, DocStringExtensions, Tullio
+using LinearAlgebra, DocStringExtensions, Tullio, LoopVectorization
 
 export batch_generator,
     Decomposition,
@@ -8,6 +8,7 @@ export batch_generator,
     Factor,
     PseInv,
     get_decomposition,
+    get_inv_decomposition,
     get_full_matrix,
     get_parametric_type,
     linear_solve,
@@ -44,9 +45,12 @@ end
 
 Makes square matrix `mat` positive definite, by symmetrizing and bounding the minimum eigenvalue below by `tol`
 """
-function posdef_correct(mat::M; tol::Real = 1e12 * eps()) where {M <: AbstractMatrix}
+function posdef_correct(mat::M; tol::R = 1e12 * eps()) where {M <: AbstractMatrix, R <: Float64}
     out = 0.5 * (mat + permutedims(mat, (2, 1))) #symmetrize
-    out += (abs(minimum(eigvals(out))) + tol) * I #add to diag
+    abs_min_ev = abs(minimum(eigvals(out)))
+    for i in 1:size(out, 1)
+        out[i, i] += abs_min_ev + tol #add to diag 
+    end
     return out
 end
 
@@ -71,7 +75,8 @@ abstract type PseInv <: StoredInvType end
 """
 $(TYPEDEF)
 
-Stores a matrix along with a decomposition `T=Factor`, or pseudoinverse `T=PseInv`
+Stores a matrix along with a decomposition `T=Factor`, or pseudoinverse `T=PseInv`, and also computes the inverse of the Factored matrix (for several predictions this is actually the most computationally efficient action)
+
 
 $(TYPEDFIELDS)
 """
@@ -80,6 +85,8 @@ struct Decomposition{T, M <: AbstractMatrix, MorF <: Union{AbstractMatrix, Facto
     full_matrix::M
     "The matrix decomposition, or pseudoinverse"
     decomposition::MorF
+    "The matrix decomposition of the inverse, or pseudoinverse"
+    inv_decomposition::M
 end
 
 function Decomposition(
@@ -87,35 +94,31 @@ function Decomposition(
     method::S;
     nugget::R = 1e12 * eps(),
 ) where {M <: AbstractMatrix, S <: AbstractString, R <: Real}
+    # TODOs
+    # 1. Originally I used  f = getfield(LinearAlgebra, Symbol(method)) but this is slow for evaluation so defining svd and cholesky is all we have now. I could maybe do dispatch here to make this a bit more slick.
+    # 2. I have tried using the in-place methods, but so far these have not made enough difference to be worthwhile, I think at some-point they would be, but the original matrix would be needed for matrix regularization. They are not the bottleneck in the end
+    # 3. The 
     if method == "pinv"
-        return Decomposition{PseInv, M, M}(mat, pinv(mat))
-    else
-        if !isdefined(LinearAlgebra, Symbol(method))
-            throw(
-                ArgumentError(
-                    "factorization method " *
-                    string(method) *
-                    " not found in LinearAlgebra, please select one of the existing options",
-                ),
-            )
-        else
-            # Don't use in-place, as we need full mat later too
-            #            if isdefined(LinearAlgebra, Symbol(method*"!"))
-            #                f = getfield(LinearAlgebra, Symbol(method*"!"))
-            #            else
-            f = getfield(LinearAlgebra, Symbol(method))
-            #            end
-
-            if method == "cholesky"
-                if !isposdef(mat)
-                    @info "Random Feature system not positive definite. Performing cholesky factorization with a close positive definite matrix"
-                    mat = posdef_correct(mat, tol = nugget)
-                end
-
-            end
-
-            return Decomposition{Factor, typeof(mat), Base.return_types(f, (typeof(mat),))[1]}(mat, f(mat))
+        invmat = pinv(mat)
+        return Decomposition{PseInv, M, M}(mat, invmat, invmat)
+    elseif method == "svd"
+        fmat = svd(mat)
+        return Decomposition{Factor, typeof(mat), Base.return_types(svd, (typeof(mat),))[1]}(mat, fmat, inv(fmat))
+    elseif method == "cholesky"
+        if !isposdef(mat)
+            @info "Random Feature system not positive definite. Performing cholesky factorization with a close positive definite matrix"
+            mat = posdef_correct(mat, tol = nugget)
         end
+        fmat = cholesky(mat)
+        return Decomposition{Factor, typeof(mat), Base.return_types(cholesky, (typeof(mat),))[1]}(mat, fmat, inv(fmat))
+
+    else
+        throw(
+            ArgumentError(
+                "Only factorization methods \"pinv\", \"cholesky\" and \"svd\" implemented. got " * string(method),
+            ),
+        )
+
     end
 end
 """
@@ -124,6 +127,13 @@ $(TYPEDSIGNATURES)
 get `decomposition` field
 """
 get_decomposition(d::Decomposition) = d.decomposition
+
+"""
+$(TYPEDSIGNATURES)
+
+get `inv_decomposition` field
+"""
+get_inv_decomposition(d::Decomposition) = d.inv_decomposition
 
 """
 $(TYPEDSIGNATURES)
@@ -144,19 +154,30 @@ $(TYPEDSIGNATURES)
 
 Solve the linear system based on `Decomposition` type
 """
-function linear_solve(d::Decomposition, rhs::A, ::Type{Factor}) where {A <: AbstractArray}
-    #    return get_decomposition(d) \ rhs
-    M, N, P = size(rhs)
-    x = zeros(M, N, P)
-    for p in 1:P # \ can handle "Matrix \ Matrix", but not "Matrix \ 3-tensor"
-        x[:, :, p] = get_decomposition(d) \ rhs[:, :, p]
-    end
+function linear_solve(d::Decomposition, rhs::A, ::Type{Factor}) where {A <: AbstractArray{<:AbstractFloat, 3}}
+    # return get_decomposition(d) \ permutedims(rhs (3,1,2))
+    # for prediction its far more worthwhile to store the inverse (in cases seen thus far)
+    x = similar(rhs)#zeros(N, P, M)
+    @tullio x[n, p, i] = get_inv_decomposition(d)[i, j] * rhs[n, p, j]
     return x
 end
-function linear_solve(d::Decomposition, rhs::A, ::Type{PseInv}) where {A <: AbstractArray}
-    #get_decomposition(d) * rhs
-    @tullio x[m, n, p] := get_decomposition(d)[m, i] * rhs[i, n, p]
+
+function linear_solve(d::Decomposition, rhs::A, ::Type{PseInv}) where {A <: AbstractArray{<:AbstractFloat, 3}}
+    # return get_decomposition(d) * rhs
+    @tullio x[n, p, m] := get_decomposition(d)[m, i] * rhs[n, p, i]
     return x
+end
+
+
+function linear_solve(d::Decomposition, rhs::A, ::Type{Factor}) where {A <: AbstractVector{<:AbstractFloat}}
+    # return get_decomposition(d) \ rhs
+    return get_inv_decomposition(d) * rhs
+
+end
+
+function linear_solve(d::Decomposition, rhs::A, ::Type{PseInv}) where {A <: AbstractVector{<:AbstractFloat}}
+    #get_decomposition(d) * rhs
+    return get_decomposition(d) * rhs
 end
 
 linear_solve(d::Decomposition, rhs::A) where {A <: AbstractArray} = linear_solve(d, rhs, get_parametric_type(d))

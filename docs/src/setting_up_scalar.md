@@ -127,15 +127,15 @@ One can select batch sizes to balance the space-time (memory-process) trade-off.
     The problem is ill-conditioned without regularization.
     If you encounters a Singular or Positive-definite exceptions, try increasing `regularization`
 
-The solve for ``\beta`` occurs in the `fit` method
+The solve for ``\beta`` occurs in the `fit` method. In the `Fit` object we store the system matrix, its factorization, and the inverse of the factorization. For many applications this is most efficient representation, as predictions (particularly of the covariance) are then only a matrix multiplication.
 ```julia
 fitted_features = fit(
     rfm,
     io_pairs; # (x,y)
-    decomposition = "svd",
+    decomposition = "cholesky",
 )
 ```
-The decomposition is based off the [`LinearAlgebra.factorize`](https://docs.julialang.org/en/v1/stdlib/LinearAlgebra/#man-linalg-factorizations) functions. The string must match the function name (e.g. `"qr"` `"cholesky"`). This specialization can accelerate the linear solvers.
+The decomposition is based off the [`LinearAlgebra.Factorize`](https://docs.julialang.org/en/v1/stdlib/LinearAlgebra/#man-linalg-factorizations) functions. For performance we have implemented only ("cholesky", "svd", and for ``\Lambda=0`` (not recommended) the method defaults to "pinv")
 
 ## Hyperparameters
 
