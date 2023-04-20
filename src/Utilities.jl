@@ -154,32 +154,52 @@ $(TYPEDSIGNATURES)
 
 Solve the linear system based on `Decomposition` type
 """
-function linear_solve(d::Decomposition, rhs::A, ::Type{Factor}) where {A <: AbstractArray{<:AbstractFloat, 3}}
+function linear_solve(
+    d::Decomposition,
+    rhs::A,
+    ::Type{Factor};
+    tullio_threading = true,
+) where {A <: AbstractArray{<:AbstractFloat, 3}}
     # return get_decomposition(d) \ permutedims(rhs (3,1,2))
     # for prediction its far more worthwhile to store the inverse (in cases seen thus far)
     x = similar(rhs)#zeros(N, P, M)
-    @tullio x[n, p, i] = get_inv_decomposition(d)[i, j] * rhs[n, p, j]
+    if !tullio_threading
+        @tullio threads = false x[n, p, i] = get_inv_decomposition(d)[i, j] * rhs[n, p, j]
+    else
+        @tullio x[n, p, i] = get_inv_decomposition(d)[i, j] * rhs[n, p, j]
+    end
     return x
 end
 
-function linear_solve(d::Decomposition, rhs::A, ::Type{PseInv}) where {A <: AbstractArray{<:AbstractFloat, 3}}
+function linear_solve(
+    d::Decomposition,
+    rhs::A,
+    ::Type{PseInv};
+    tullio_threading = true,
+) where {A <: AbstractArray{<:AbstractFloat, 3}}
     # return get_decomposition(d) * rhs
-    @tullio x[n, p, m] := get_decomposition(d)[m, i] * rhs[n, p, i]
+    if !tullio_threading
+        @tullio threads = false x[n, p, m] := get_decomposition(d)[m, i] * rhs[n, p, i]
+    else
+        @tullio x[n, p, m] := get_decomposition(d)[m, i] * rhs[n, p, i]
+    end
+
     return x
 end
 
 
-function linear_solve(d::Decomposition, rhs::A, ::Type{Factor}) where {A <: AbstractVector{<:AbstractFloat}}
+function linear_solve(d::Decomposition, rhs::A, ::Type{Factor}; kwargs...) where {A <: AbstractVector{<:AbstractFloat}}
     # return get_decomposition(d) \ rhs
     return get_inv_decomposition(d) * rhs
 
 end
 
-function linear_solve(d::Decomposition, rhs::A, ::Type{PseInv}) where {A <: AbstractVector{<:AbstractFloat}}
+function linear_solve(d::Decomposition, rhs::A, ::Type{PseInv}; kwargs...) where {A <: AbstractVector{<:AbstractFloat}}
     #get_decomposition(d) * rhs
     return get_decomposition(d) * rhs
 end
 
-linear_solve(d::Decomposition, rhs::A) where {A <: AbstractArray} = linear_solve(d, rhs, get_parametric_type(d))
+linear_solve(d::Decomposition, rhs::A; tullio_threading = true) where {A <: AbstractArray} =
+    linear_solve(d, rhs, get_parametric_type(d), tullio_threading = tullio_threading)
 
 end

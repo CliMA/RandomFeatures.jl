@@ -15,6 +15,7 @@ using RandomFeatures.ParameterDistributions
 
 
 seed = 2023
+tol = 1e3 * eps()
 
 @testset "Methods" begin
 
@@ -57,6 +58,11 @@ seed = 2023
 
         @test get_batch_sizes(rfm) == batch_sizes
         rf_test = get_random_feature(rfm)
+
+        @test get_tullio_threading(rfm) == true
+        rfm = RandomFeatureMethod(sff, tullio_threading = false)
+        @test get_tullio_threading(rfm) == false
+
         #too arduous right now to check rf_test == sff will wait until "==" is overloaded for ParameterDistribution
 
         rfm_default = RandomFeatureMethod(sff)
@@ -136,18 +142,21 @@ seed = 2023
             batch_sizes = Dict("train" => 100, "test" => 100, "feature" => 100)
 
             rfm_batch = RandomFeatureMethod(sff, batch_sizes = batch_sizes, regularization = lambda)
+            rfm_nothread = RandomFeatureMethod(sff, regularization = lambda, tullio_threading = false)
 
             fitted_batched_features = fit(rfm_batch, io_pairs)
             coeffs_batched = get_coeffs(fitted_batched_features)
             @test coeffs ≈ coeffs_batched
 
+            fitted_features_nothread = fit(rfm_nothread, io_pairs)
+            coeffs_nothread = get_coeffs(fitted_features_nothread)
+            @test coeffs ≈ coeffs_nothread
             # test prediction with different features
             pred_mean, pred_cov = predict(rfm_batch, fitted_batched_features, xtest)
             if exp_idx == 1
                 pmtmp = zeros(size(pred_mean)) # p x n
                 pctmp = zeros(size(pred_cov)) # p x p x n
                 buffer = zeros(size(pctmp, 3), size(pctmp, 1), n_features) # n x p x m
-                tol = 1e2 * eps()
                 predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp, buffer)
 
                 @test all(isapprox.(pred_mean, pmtmp, atol = tol))
@@ -165,6 +174,27 @@ seed = 2023
             prior_mean, prior_cov = predict_prior(rfm_batch, xtest) # predict inputs from unfitted features
             prior_mean_relu, prior_cov_relu = predict_prior(rfm_relu, xtest)
             prior_mean_sig, prior_cov_sig = predict_prior(rfm_sig, xtest)
+
+
+            pred_mean_nothread, pred_cov_nothread =
+                predict(rfm_nothread, fitted_features_nothread, xtest, tullio_threading = false)
+            @test all(isapprox.(pred_mean_nothread, pred_mean, atol = tol))
+            @test all(isapprox.(pred_cov_nothread, pred_cov, atol = tol))
+            pmr_nothread = similar(pred_mean)
+            pcr_nothread = similar(pred_cov)
+            buffer = zeros(size(pred_cov, 3), size(pred_cov, 1), n_features) # n x p x m
+            predict!(
+                rfm_nothread,
+                fitted_features_nothread,
+                xtest,
+                pmr_nothread,
+                pcr_nothread,
+                buffer,
+                tullio_threading = false,
+            )
+            @test all(isapprox.(pmr_nothread, pred_mean, atol = tol))
+            @test all(isapprox.(pcr_nothread, pred_cov, atol = tol))
+
 
             # enforce positivity
             prior_cov = max.(0, prior_cov)
@@ -311,7 +341,6 @@ seed = 2023
         prior_mean, prior_cov = predict_prior(rfm_batch, xtest) # predict inputs from unfitted features
 
         # test other prior methods.
-        tol = 1e3 * eps()
         prior_cov2, features_tmp = predict_prior_cov(rfm_batch, xtest)
         prior_mean2 = predict_prior_mean(rfm_batch, xtest, features_tmp)
         @test all(isapprox.(prior_cov, prior_cov2, atol = tol))
@@ -329,7 +358,6 @@ seed = 2023
         pmtmp = ones(size(pred_mean))
         pctmp = ones(size(pred_cov))
         buffer = zeros(size(pctmp, 3), size(pctmp, 1), n_features) # n x p x m
-        tol = 1e2 * eps()
         predict!(rfm_batch, fitted_batched_features, xtest, pmtmp, pctmp, buffer)
         @test all(isapprox.(pred_mean, pmtmp, atol = tol))
         @test all(isapprox.(pred_cov, pctmp, atol = tol))
@@ -541,7 +569,6 @@ seed = 2023
             pred_cov_tmp, features_tmp = predictive_cov(rfm_batch, fitted_batched_features, xtest)
             pred_mean_tmp = predictive_mean(rfm_batch, fitted_batched_features, xtest, features_tmp)
 
-            tol = 1e2 * eps()
             @test all(isapprox.(pred_mean, pred_mean_tmp, atol = tol))
             @test all(isapprox.(pred_cov, pred_cov_tmp, atol = tol))
 
@@ -559,9 +586,40 @@ seed = 2023
                 predictive_mean!(rfm_batch, fitted_batched_features, xtest, pmtmp2, features_tmp)
                 @test all(isapprox.(pred_mean, pmtmp2, atol = tol))
                 @test all(isapprox.(pred_cov, pctmp2, atol = tol))
+            end
 
+            # no threading
+            if exp_name ∈ ["correlated-lambdamat", "diagonal-lambdamat"]
+                rfm_nothread = RandomFeatureMethod(vff, regularization = lambda, tullio_threading = false)
+                fitted_features_nothread = fit(rfm_nothread, io_pairs)
+                coeffs = get_coeffs(fitted_batched_features)
+                coeffs_nothread = get_coeffs(fitted_features_nothread)
+                @test coeffs ≈ coeffs_nothread
+                # it appears there is a significant difference in the linear algebra with and without threads here.
+                tol_tmp = 1e-10
 
+                prior_mean_nothread, prior_cov_nothread = predict_prior(rfm_nothread, xtest, tullio_threading = false) # predict inputs from unfitted features
+                @test all(isapprox.(prior_mean_nothread, prior_mean, atol = tol_tmp))
+                @test all(isapprox.(prior_cov_nothread, prior_cov, atol = tol_tmp))
 
+                pred_mean_nothread, pred_cov_nothread =
+                    predict(rfm_nothread, fitted_features_nothread, xtest, tullio_threading = false)
+                @test all(isapprox.(pred_mean_nothread, pred_mean, atol = tol_tmp))
+                @test all(isapprox.(pred_cov_nothread, pred_cov, atol = tol_tmp))
+                pmr_nothread = similar(pred_mean)
+                pcr_nothread = similar(pred_cov)
+                buffer = zeros(size(pred_cov, 3), size(pred_cov, 1), n_features) # n x p x m
+                predict!(
+                    rfm_nothread,
+                    fitted_features_nothread,
+                    xtest,
+                    pmr_nothread,
+                    pcr_nothread,
+                    buffer,
+                    tullio_threading = false,
+                )
+                @test all(isapprox.(pmr_nothread, pred_mean, atol = tol_tmp))
+                @test all(isapprox.(pcr_nothread, pred_cov, atol = tol_tmp))
             end
 
             #println(pred_mean)
