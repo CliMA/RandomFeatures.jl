@@ -12,8 +12,14 @@
 
 # Parallelism/memory
 - We make use of [`Tullio.jl`](https://github.com/mcabbott/Tullio.jl) which comes with in-built memory management. We are phasing out our own batches in favour of using this for now.
-- [`Tullio.jl`(https://github.com/mcabbott/Tullio.jl) comes with multithreading routines, Simply call the code with `julia --project -t n_threads` to take advantage of this
-!!! note
-    (Hopefully coming soon) We do not yet have GPU functionality
+- [`Tullio.jl`(https://github.com/mcabbott/Tullio.jl) comes with multithreading routines, Simply call the code with `julia --project -t n_threads` to take advantage of this. Depending on problem size you may wish to use your own external threading, Tullio will greedily steal threads in this case. To prevent this interference we provide a keyword argument: 
+```julia
+RandomFeatureMethod(... ; tullio_threading=false) # serial threading during the build and fit! methods
+predict(...; tullio_threading=false) # serial threading for prediction
+predict!(...; tullio_threading=false) # serial threading for in-place prediction
+```
+An example where `tullio_threading=false` is useful is when optimizing hyperparameters with ensemble methods (see our examples), here one could use threading/multiprocessing approaches across ensemble members to make better use of the embarassingly parallel framework (e.g. see this page for [EnsembleKalmanProcessess: Parallelism and HPC](https://clima.github.io/EnsembleKalmanProcesses.jl/dev/parallel_hpc/). 
 
-- If optimizing hyperparameters with ensemble methods, one can use MPI approaches across each ensemble member to make better use of the embarassingly parallel framework (e.g. see this page for [EnsembleKalmanProcessess: Parallelism and HPC](https://clima.github.io/EnsembleKalmanProcesses.jl/dev/parallel_hpc/)
+!!! note
+    We do not yet have GPU functionality
+

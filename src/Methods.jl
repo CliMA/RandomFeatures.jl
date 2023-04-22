@@ -16,6 +16,7 @@ export RandomFeatureMethod,
     get_batch_sizes,
     get_batch_size,
     get_regularization,
+    get_tullio_threading,
     sample,
     get_feature_factors,
     get_coeffs,
@@ -44,6 +45,8 @@ struct RandomFeatureMethod{S <: AbstractString, USorM <: Union{UniformScaling, A
     batch_sizes::Dict{S, Int}
     "A positive definite matrix used during the fit method to regularize the linear solve"
     regularization::USorM
+    "Use multithreading provided by Tullio"
+    tullio_threading::Bool
 end
 
 """
@@ -55,6 +58,7 @@ function RandomFeatureMethod(
     random_feature::RandomFeature;
     regularization::USorMorR = 1e12 * eps() * I,
     batch_sizes::Dict{S, Int} = Dict("train" => 0, "test" => 0, "feature" => 0),
+    tullio_threading = true,
 ) where {S <: AbstractString, USorMorR <: Union{<:Real, AbstractMatrix{<:Real}, UniformScaling}}
 
     if !all([key ∈ keys(batch_sizes) for key in ["train", "test", "feature"]])
@@ -78,7 +82,7 @@ function RandomFeatureMethod(
         end
     end
 
-    return RandomFeatureMethod{S, typeof(lambda)}(random_feature, batch_sizes, lambda)
+    return RandomFeatureMethod{S, typeof(lambda)}(random_feature, batch_sizes, lambda, tullio_threading)
 end
 
 """
@@ -102,6 +106,12 @@ gets the `regularization` field
 """
 get_regularization(rfm::RandomFeatureMethod) = rfm.regularization
 
+"""
+$(TYPEDSIGNATURES)
+
+gets the `tullio_threading` field
+"""
+get_tullio_threading(rfm::RandomFeatureMethod) = rfm.tullio_threading
 
 """
 $(TYPEDSIGNATURES)
@@ -177,6 +187,7 @@ function fit(
 
     train_batch_size = get_batch_size(rfm, "train")
     rf = get_random_feature(rfm)
+    tullio_threading = get_tullio_threading(rfm)
     n_features = get_n_features(rf)
     #data are columns, batch over samples
 
@@ -200,10 +211,19 @@ function fit(
         else
 
             if !isa(lambda, Diagonal)
-                @tullio lambdaT_times_phi[n, p, i] := lambda[q, p] * Phi[n, q, i] # (I ⊗ Λᵀ) Φ
+                if !tullio_threading
+                    @tullio threads = false lambdaT_times_phi[n, p, i] := lambda[q, p] * Phi[n, q, i] # (I ⊗ Λᵀ) Φ
+                else
+                    @tullio lambdaT_times_phi[n, p, i] := lambda[q, p] * Phi[n, q, i] # (I ⊗ Λᵀ) Φ
+                end
             else
                 lam_diag = [lambda[i, i] for i in 1:size(lambda, 1)]
-                @tullio lambdaT_times_phi[n, p, i] := lam_diag[p] * Phi[n, p, i] # (I ⊗ Λᵀ) Φ
+
+                if !tullio_threading
+                    @tullio threads = false lambdaT_times_phi[n, p, i] := lam_diag[p] * Phi[n, p, i] # (I ⊗ Λᵀ) Φ
+                else
+                    @tullio lambdaT_times_phi[n, p, i] := lam_diag[p] * Phi[n, p, i] # (I ⊗ Λᵀ) Φ                
+                end
             end
             #reshape to stacks columns, i.e n,p -> np does (n,...,n) p times
             rhs = reshape(permutedims(lambdaT_times_phi, (2, 1, 3)), (n_data * output_dim, n_features))
@@ -225,9 +245,13 @@ function fit(
 
     PhiTY = zeros(n_features) #
     PhiTPhi = zeros(n_features, n_features)
-
-    @tullio PhiTY[j] = Phi[n, p, j] * output[p, n]
-    @tullio PhiTPhi[i, j] = Phi[n, p, i] * Phi[n, p, j] # BOTTLENECK
+    if !tullio_threading
+        @tullio threads = false PhiTY[j] = Phi[n, p, j] * output[p, n]
+        @tullio threads = false PhiTPhi[i, j] = Phi[n, p, i] * Phi[n, p, j] # BOTTLENECK
+    else
+        @tullio PhiTY[j] = Phi[n, p, j] * output[p, n]
+        @tullio PhiTPhi[i, j] = Phi[n, p, i] * Phi[n, p, j] # BOTTLENECK
+    end
     # alternative using svd - turns out to be slower and more mem intensive
 
     @. PhiTPhi /= FT(n_features)
@@ -252,7 +276,7 @@ function fit(
 
     end
 
-    coeffs = linear_solve(feature_factors, PhiTY) #n_features x n_samples x dim_output
+    coeffs = linear_solve(feature_factors, PhiTY, tullio_threading = tullio_threading) #n_features x n_samples x dim_output
 
     return Fit{typeof(coeffs), typeof(lambda_new)}(feature_factors, coeffs, lambda_new)
 end
@@ -263,9 +287,9 @@ end
         
     Makes a prediction of mean and (co)variance of fitted features on new input data
 """
-function predict(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer)
-    pred_mean, features = predictive_mean(rfm, fit, new_inputs)
-    pred_cov = predictive_cov(rfm, fit, new_inputs, features)
+function predict(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer; kwargs...)
+    pred_mean, features = predictive_mean(rfm, fit, new_inputs; kwargs...)
+    pred_cov = predictive_cov(rfm, fit, new_inputs, features; kwargs...)
 
     return pred_mean, pred_cov
 end
@@ -284,11 +308,12 @@ function predict!(
     new_inputs::DataContainer,
     mean_store::M,
     cov_store::A,
-    buffer::A,
+    buffer::A;
+    kwargs...,
 ) where {M <: AbstractMatrix{<:AbstractFloat}, A <: AbstractArray{<:AbstractFloat, 3}}
     #build features once only
-    features = predictive_mean!(rfm, fit, new_inputs, mean_store)
-    predictive_cov!(rfm, fit, new_inputs, cov_store, buffer, features)
+    features = predictive_mean!(rfm, fit, new_inputs, mean_store; kwargs...)
+    predictive_cov!(rfm, fit, new_inputs, cov_store, buffer, features; kwargs...)
     nothing
 end
 
@@ -298,9 +323,9 @@ $(TYPEDSIGNATURES)
 
 Makes a prediction of mean and (co)variance with unfitted features on new input data
 """
-function predict_prior(rfm::RandomFeatureMethod, new_inputs::DataContainer)
-    prior_mean, features = predict_prior_mean(rfm, new_inputs)
-    prior_cov = predict_prior_cov(rfm, new_inputs, features)
+function predict_prior(rfm::RandomFeatureMethod, new_inputs::DataContainer; kwargs...)
+    prior_mean, features = predict_prior_mean(rfm, new_inputs; kwargs...)
+    prior_cov = predict_prior_cov(rfm, new_inputs, features; kwargs...)
     return prior_mean, prior_cov
 end
 
@@ -309,22 +334,23 @@ $(TYPEDSIGNATURES)
 
 Makes a prediction of mean with unfitted features on new input data
 """
-function predict_prior_mean(rfm::RandomFeatureMethod, new_inputs::DataContainer)
+function predict_prior_mean(rfm::RandomFeatureMethod, new_inputs::DataContainer; kwargs...)
     rf = get_random_feature(rfm)
     n_features = get_n_features(rf)
     coeffs = ones(n_features)
-    return predictive_mean(rfm, coeffs, new_inputs)
+    return predictive_mean(rfm, coeffs, new_inputs; kwargs...)
 end
 
 function predict_prior_mean(
     rfm::RandomFeatureMethod,
     new_inputs::DataContainer,
-    prebuilt_features::A,
+    prebuilt_features::A;
+    kwargs...,
 ) where {A <: AbstractArray{<:AbstractFloat, 3}}
     rf = get_random_feature(rfm)
     n_features = get_n_features(rf)
     coeffs = ones(n_features)
-    return predictive_mean(rfm, coeffs, new_inputs, prebuilt_features)
+    return predictive_mean(rfm, coeffs, new_inputs, prebuilt_features; kwargs...)
 end
 
 """
@@ -332,17 +358,19 @@ $(TYPEDSIGNATURES)
 
 Makes a prediction of (co)variance with unfitted features on new input data
 """
-function predict_prior_cov(rfm::RandomFeatureMethod, new_inputs::DataContainer)
+function predict_prior_cov(rfm::RandomFeatureMethod, new_inputs::DataContainer; kwargs...)
     inputs = get_data(new_inputs)
     rf = get_random_feature(rfm)
     features = build_features(rf, inputs) # bsize x output_dim x n_features
-    return predict_prior_cov(rfm, new_inputs, features), features
+    return predict_prior_cov(rfm, new_inputs, features; kwargs...), features
 end
 
 function predict_prior_cov(
     rfm::RandomFeatureMethod,
     new_inputs::DataContainer,
-    prebuilt_features::A,
+    prebuilt_features::A;
+    tullio_threading = true,
+    kwargs...,
 ) where {A <: AbstractArray{<:AbstractFloat, 3}}
     #TODO optimize with woodbury as with other predictive_cov
     inputs = get_data(new_inputs)
@@ -352,7 +380,13 @@ function predict_prior_cov(
     output_dim = get_output_dim(rf)
     n_features = get_n_features(rf)
     FT = eltype(prebuilt_features)
-    @tullio cov_outputs[p, q, n] := prebuilt_features[n, p, m] * prebuilt_features[l, q, m] - prebuilt_features[l, q, m] # output_dim, output_dim, size(inputs, 2)
+    if !tullio_threading
+        @tullio threads = false cov_outputs[p, q, n] :=
+            prebuilt_features[n, p, m] * prebuilt_features[l, q, m] - prebuilt_features[l, q, m] # output_dim, output_dim, size(inputs, 2)
+    else
+        @tullio cov_outputs[p, q, n] :=
+            prebuilt_features[n, p, m] * prebuilt_features[l, q, m] - prebuilt_features[l, q, m] # output_dim, output_dim, size(inputs, 2)
+    end
     @. cov_outputs /= FT(n_features)
     return cov_outputs
 end
@@ -363,37 +397,45 @@ $(TYPEDSIGNATURES)
 Makes a prediction of mean of fitted features on new input data.
 Returns a `output_dim` x `n_samples` array.
 """
-predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer) =
-    predictive_mean(rfm, get_coeffs(fit), new_inputs)
+predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer; kwargs...) =
+    predictive_mean(rfm, get_coeffs(fit), new_inputs; kwargs...)
 
 predictive_mean(
     rfm::RandomFeatureMethod,
     fit::Fit,
     new_inputs::DataContainer,
-    prebuilt_features::A,
-) where {A <: AbstractArray{<:AbstractFloat, 3}} = predictive_mean(rfm, get_coeffs(fit), new_inputs, prebuilt_features)
+    prebuilt_features::A;
+    kwargs...,
+) where {A <: AbstractArray{<:AbstractFloat, 3}} =
+    predictive_mean(rfm, get_coeffs(fit), new_inputs, prebuilt_features; kwargs...)
 
-function predictive_mean(rfm::RandomFeatureMethod, coeffs::V, new_inputs::DataContainer) where {V <: AbstractVector}
+function predictive_mean(
+    rfm::RandomFeatureMethod,
+    coeffs::V,
+    new_inputs::DataContainer;
+    kwargs...,
+) where {V <: AbstractVector}
     inputs = get_data(new_inputs)
     rf = get_random_feature(rfm)
     features = build_features(rf, inputs)
-    return predictive_mean(rfm, coeffs, new_inputs, features), features
+    return predictive_mean(rfm, coeffs, new_inputs, features; kwargs...), features
 end
 
 function predictive_mean(
     rfm::RandomFeatureMethod,
     coeffs::V,
     new_inputs::DataContainer,
-    prebuilt_features::A,
+    prebuilt_features::A;
+    kwargs...,
 ) where {V <: AbstractVector{<:AbstractFloat}, A <: AbstractArray{<:AbstractFloat, 3}}
 
+    inputs = get_data(new_inputs)
     rf = get_random_feature(rfm)
-    n_features = get_n_features(rf)
-    @tullio outputs[p, n] := prebuilt_features[n, p, m] * coeffs[m]
-    FT = eltype(prebuilt_features)
-    @. outputs /= FT(n_features)
-
-    return outputs
+    n_samples = size(inputs, 2)
+    output_dim = get_output_dim(rf)
+    mean_store = zeros(output_dim, n_samples)
+    predictive_mean!(rfm, coeffs, new_inputs, mean_store, prebuilt_features; kwargs...)
+    return mean_store
 end
 
 """
@@ -406,29 +448,32 @@ predictive_mean!(
     rfm::RandomFeatureMethod,
     fit::Fit,
     new_inputs::DataContainer,
-    mean_store::M,
-) where {M <: Matrix{<:AbstractFloat}} = predictive_mean!(rfm, get_coeffs(fit), new_inputs, mean_store)
+    mean_store::M;
+    kwargs...,
+) where {M <: Matrix{<:AbstractFloat}} = predictive_mean!(rfm, get_coeffs(fit), new_inputs, mean_store; kwargs...)
 
 predictive_mean!(
     rfm::RandomFeatureMethod,
     fit::Fit,
     new_inputs::DataContainer,
     mean_store::M,
-    features::A,
+    features::A;
+    kwargs...,
 ) where {M <: Matrix{<:AbstractFloat}, A <: AbstractArray{<:AbstractFloat, 3}} =
-    predictive_mean!(rfm, get_coeffs(fit), new_inputs, mean_store, features)
+    predictive_mean!(rfm, get_coeffs(fit), new_inputs, mean_store, features; kwargs...)
 
 
 function predictive_mean!(
     rfm::RandomFeatureMethod,
     coeffs::V,
     new_inputs::DataContainer,
-    mean_store::M,
+    mean_store::M;
+    kwargs...,
 ) where {V <: AbstractVector{<:AbstractFloat}, M <: Matrix{<:AbstractFloat}}
     inputs = get_data(new_inputs)
     rf = get_random_feature(rfm)
     features = build_features(rf, inputs)
-    predictive_mean!(rfm, coeffs, new_inputs, mean_store, features)
+    predictive_mean!(rfm, coeffs, new_inputs, mean_store, features; kwargs...)
     return features
 end
 
@@ -437,10 +482,13 @@ function predictive_mean!(
     coeffs::V,
     new_inputs::DataContainer,
     mean_store::M,
-    prebuilt_features::A,
+    prebuilt_features::A;
+    tullio_threading = true,
+    kwargs...,
 ) where {V <: AbstractVector{<:AbstractFloat}, M <: Matrix{<:AbstractFloat}, A <: AbstractArray{<:AbstractFloat, 3}}
     inputs = get_data(new_inputs)
     rf = get_random_feature(rfm)
+    tullio_threading = get_tullio_threading(rfm)
     output_dim = get_output_dim(rf)
     n_features = get_n_features(rf)
     if !(size(mean_store) == (output_dim, size(inputs, 2)))
@@ -450,8 +498,11 @@ function predictive_mean!(
             ),
         )
     end
-
-    @tullio mean_store[p, n] = prebuilt_features[n, p, m] * coeffs[m]
+    if !tullio_threading
+        @tullio threads = false mean_store[p, n] = prebuilt_features[n, p, m] * coeffs[m]
+    else
+        @tullio mean_store[p, n] = prebuilt_features[n, p, m] * coeffs[m]
+    end
     FT = eltype(prebuilt_features)
     @. mean_store /= FT(n_features)
 
@@ -468,55 +519,29 @@ function predictive_cov(
     rfm::RandomFeatureMethod,
     fit::Fit,
     new_inputs::DataContainer,
-    prebuilt_features::A,
+    prebuilt_features::A;
+    kwargs...,
 ) where {A <: AbstractArray{<:AbstractFloat, 3}}
-    # unlike in mean case, we must perform a linear solve for coefficients at every test point.
-    # thus we return both the covariance and the input-dep coefficients
-    # note the covariance here is a posterior variance in 1d outputs, it is not the posterior covariance
 
     inputs = get_data(new_inputs)
-
-    test_batch_size = get_batch_size(rfm, "test")
-    features_batch_size = get_batch_size(rfm, "feature")
+    n_samples = size(inputs, 2)
     rf = get_random_feature(rfm)
-    n_features = get_n_features(rf)
-    lambda = get_regularization(fit)
-
     output_dim = get_output_dim(rf)
-    coeffs = get_coeffs(fit)
-    PhiTPhi_reg_factors = get_feature_factors(fit)
-    inv_decomp = get_inv_decomposition(PhiTPhi_reg_factors)
-    FT = eltype(prebuilt_features)
-    if isa(lambda, UniformScaling)
-        #fastest way for tullio to multiply the matrices...
-        @tullio tmp[n, p, o] := prebuilt_features[n, p, m] * inv_decomp[m, o]
-        @tullio cov_outputs[p, q, n] := tmp[n, p, o] * prebuilt_features[n, q, o]
-        @. cov_outputs /= (FT(n_features) / lambda.λ)
-    else
-        PhiTPhi_reg = get_full_matrix(PhiTPhi_reg_factors)
-        @. PhiTPhi_reg -= lambda
-        @tullio rhs[n, p, i] := PhiTPhi_reg[i, j] * prebuilt_features[n, p, j] # BOTTLENECK OF PREDICTION
-        coeff_outputs = linear_solve(PhiTPhi_reg_factors, rhs) # n_features x bsize x output_dim
-        @tullio cov_outputs[p, q, n] :=
-            prebuilt_features[n, p, m] * (prebuilt_features[n, q, m] - coeff_outputs[n, q, m])
-        @. cov_outputs /= FT(n_features)
-
-        # IMPORTANT, we remove lambda in-place for calculation only, so must add it back
-        @. PhiTPhi_reg += lambda
-
-    end
-
-    return cov_outputs
+    n_features = get_n_features(rf)
+    cov_store = zeros(output_dim, output_dim, n_samples)
+    buffer = zeros(n_samples, output_dim, n_features)
+    predictive_cov!(rfm, fit, new_inputs, cov_store, buffer, prebuilt_features; kwargs...)
+    return cov_store
 end
 
 
-function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer)
+function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer; kwargs...)
 
     rf = get_random_feature(rfm)
     inputs = get_data(new_inputs)
     features = build_features(rf, inputs) # build_features gives bsize x output_dim x n_features
 
-    return predictive_cov(rfm, fit, new_inputs, features), features
+    return predictive_cov(rfm, fit, new_inputs, features; kwargs...), features
 end
 
 """
@@ -531,7 +556,9 @@ function predictive_cov!(
     new_inputs::DataContainer,
     cov_store::A,
     buffer::A,
-    prebuilt_features::A,
+    prebuilt_features::A;
+    tullio_threading = true,
+    kwargs...,
 ) where {A <: AbstractArray{<:AbstractFloat, 3}}
 
     # unlike in mean case, we must perform a linear solve for coefficients at every test point.
@@ -542,6 +569,7 @@ function predictive_cov!(
     test_batch_size = get_batch_size(rfm, "test")
     features_batch_size = get_batch_size(rfm, "feature")
     rf = get_random_feature(rfm)
+    tullio_threading = get_tullio_threading(rfm)
     n_features = get_n_features(rf)
     lambda = get_regularization(fit)
 
@@ -566,18 +594,31 @@ function predictive_cov!(
                 ),
             )
         end
-
-        @tullio buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o]
-        @tullio cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
+        if !tullio_threading
+            @tullio threads = false buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o]
+            @tullio threads = false cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
+        else
+            @tullio buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o]
+            @tullio cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
+        end
         @. cov_store /= (FT(n_features) / lambda.λ) #i.e. * lambda / n_features
 
     else
         PhiTPhi_reg = get_full_matrix(PhiTPhi_reg_factors)
         @. PhiTPhi_reg -= lambda
-        @tullio buffer[n, p, i] = PhiTPhi_reg[i, j] * prebuilt_features[n, p, j] # BOTTLENECK OF PREDICTION
-        coeff_outputs = linear_solve(PhiTPhi_reg_factors, buffer) # n_features x bsize x output_dim
-        # make sure we don't use := in following line, or it wont modify the input argument.
-        @tullio cov_store[p, q, n] = prebuilt_features[n, p, m] * (prebuilt_features[n, q, m] - coeff_outputs[n, q, m])
+        if !tullio_threading
+            @tullio threads = false buffer[n, p, i] = PhiTPhi_reg[i, j] * prebuilt_features[n, p, j] # BOTTLENECK OF PREDICTION
+            coeff_outputs = linear_solve(PhiTPhi_reg_factors, buffer, tullio_threading = tullio_threading) # n_features x bsize x output_dim
+            # make sure we don't use := in following line, or it wont modify the input argument.
+            @tullio threads = false cov_store[p, q, n] =
+                prebuilt_features[n, p, m] * (prebuilt_features[n, q, m] - coeff_outputs[n, q, m])
+        else
+            @tullio buffer[n, p, i] = PhiTPhi_reg[i, j] * prebuilt_features[n, p, j] # BOTTLENECK OF PREDICTION
+            coeff_outputs = linear_solve(PhiTPhi_reg_factors, buffer) # n_features x bsize x output_dim
+            # make sure we don't use := in following line, or it wont modify the input argument.
+            @tullio cov_store[p, q, n] =
+                prebuilt_features[n, p, m] * (prebuilt_features[n, q, m] - coeff_outputs[n, q, m])
+        end
         @. cov_store /= FT(n_features)
 
         # IMPORTANT, we remove lambda in-place for calculation only, so must add it back
@@ -592,13 +633,14 @@ function predictive_cov!(
     fit::Fit,
     new_inputs::DataContainer,
     cov_store::A,
-    buffer::A,
+    buffer::A;
+    kwargs...,
 ) where {A <: AbstractArray{<:AbstractFloat, 3}}
 
     rf = get_random_feature(rfm)
     inputs = get_data(new_inputs)
     features = build_features(rf, inputs)
-    predictive_cov!(rfm, fit, new_inputs, cov_store, buffer, features)
+    predictive_cov!(rfm, fit, new_inputs, cov_store, buffer, features; kwargs...)
     return features
 end
 
