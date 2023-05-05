@@ -164,7 +164,7 @@ function linear_solve(
     # for prediction its far more worthwhile to store the inverse (in cases seen thus far)
     x = similar(rhs)#zeros(N, P, M)
     if !tullio_threading
-        @tullio threads = false x[n, p, i] = get_inv_decomposition(d)[i, j] * rhs[n, p, j]
+        @tullio threads = 10^9 x[n, p, i] = get_inv_decomposition(d)[i, j] * rhs[n, p, j]
     else
         @tullio x[n, p, i] = get_inv_decomposition(d)[i, j] * rhs[n, p, j]
     end
@@ -179,7 +179,7 @@ function linear_solve(
 ) where {A <: AbstractArray{<:AbstractFloat, 3}}
     # return get_decomposition(d) * rhs
     if !tullio_threading
-        @tullio threads = false x[n, p, m] := get_decomposition(d)[m, i] * rhs[n, p, i]
+        @tullio threads = 10^9 x[n, p, m] := get_decomposition(d)[m, i] * rhs[n, p, i]
     else
         @tullio x[n, p, m] := get_decomposition(d)[m, i] * rhs[n, p, i]
     end

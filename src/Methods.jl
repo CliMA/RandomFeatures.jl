@@ -212,7 +212,7 @@ function fit(
 
             if !isa(lambda, Diagonal)
                 if !tullio_threading
-                    @tullio threads = false lambdaT_times_phi[n, p, i] := lambda[q, p] * Phi[n, q, i] # (I ⊗ Λᵀ) Φ
+                    @tullio threads = 10^9 lambdaT_times_phi[n, p, i] := lambda[q, p] * Phi[n, q, i] # (I ⊗ Λᵀ) Φ
                 else
                     @tullio lambdaT_times_phi[n, p, i] := lambda[q, p] * Phi[n, q, i] # (I ⊗ Λᵀ) Φ
                 end
@@ -220,7 +220,7 @@ function fit(
                 lam_diag = [lambda[i, i] for i in 1:size(lambda, 1)]
 
                 if !tullio_threading
-                    @tullio threads = false lambdaT_times_phi[n, p, i] := lam_diag[p] * Phi[n, p, i] # (I ⊗ Λᵀ) Φ
+                    @tullio threads = 10^9 lambdaT_times_phi[n, p, i] := lam_diag[p] * Phi[n, p, i] # (I ⊗ Λᵀ) Φ
                 else
                     @tullio lambdaT_times_phi[n, p, i] := lam_diag[p] * Phi[n, p, i] # (I ⊗ Λᵀ) Φ                
                 end
@@ -246,8 +246,8 @@ function fit(
     PhiTY = zeros(n_features) #
     PhiTPhi = zeros(n_features, n_features)
     if !tullio_threading
-        @tullio threads = false PhiTY[j] = Phi[n, p, j] * output[p, n]
-        @tullio threads = false PhiTPhi[i, j] = Phi[n, p, i] * Phi[n, p, j] # BOTTLENECK
+        @tullio threads = 10^9 PhiTY[j] = Phi[n, p, j] * output[p, n]
+        @tullio threads = 10^9 PhiTPhi[i, j] = Phi[n, p, i] * Phi[n, p, j] # BOTTLENECK
     else
         @tullio PhiTY[j] = Phi[n, p, j] * output[p, n]
         @tullio PhiTPhi[i, j] = Phi[n, p, i] * Phi[n, p, j] # BOTTLENECK
@@ -381,7 +381,7 @@ function predict_prior_cov(
     n_features = get_n_features(rf)
     FT = eltype(prebuilt_features)
     if !tullio_threading
-        @tullio threads = false cov_outputs[p, q, n] :=
+        @tullio threads = 10^9 cov_outputs[p, q, n] :=
             prebuilt_features[n, p, m] * prebuilt_features[l, q, m] - prebuilt_features[l, q, m] # output_dim, output_dim, size(inputs, 2)
     else
         @tullio cov_outputs[p, q, n] :=
@@ -499,7 +499,7 @@ function predictive_mean!(
         )
     end
     if !tullio_threading
-        @tullio threads = false mean_store[p, n] = prebuilt_features[n, p, m] * coeffs[m]
+        @tullio threads = 10^9 mean_store[p, n] = prebuilt_features[n, p, m] * coeffs[m]
     else
         @tullio mean_store[p, n] = prebuilt_features[n, p, m] * coeffs[m]
     end
@@ -595,8 +595,8 @@ function predictive_cov!(
             )
         end
         if !tullio_threading
-            @tullio threads = false buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o]
-            @tullio threads = false cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
+            @tullio threads = 10^9 buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o]
+            @tullio threads = 10^9 cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
         else
             @tullio buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o]
             @tullio cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
@@ -607,10 +607,10 @@ function predictive_cov!(
         PhiTPhi_reg = get_full_matrix(PhiTPhi_reg_factors)
         @. PhiTPhi_reg -= lambda
         if !tullio_threading
-            @tullio threads = false buffer[n, p, i] = PhiTPhi_reg[i, j] * prebuilt_features[n, p, j] # BOTTLENECK OF PREDICTION
+            @tullio threads = 10^9 buffer[n, p, i] = PhiTPhi_reg[i, j] * prebuilt_features[n, p, j] # BOTTLENECK OF PREDICTION
             coeff_outputs = linear_solve(PhiTPhi_reg_factors, buffer, tullio_threading = tullio_threading) # n_features x bsize x output_dim
             # make sure we don't use := in following line, or it wont modify the input argument.
-            @tullio threads = false cov_store[p, q, n] =
+            @tullio threads = 10^9 cov_store[p, q, n] =
                 prebuilt_features[n, p, m] * (prebuilt_features[n, q, m] - coeff_outputs[n, q, m])
         else
             @tullio buffer[n, p, i] = PhiTPhi_reg[i, j] * prebuilt_features[n, p, j] # BOTTLENECK OF PREDICTION
