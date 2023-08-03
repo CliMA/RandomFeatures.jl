@@ -265,31 +265,60 @@ seed = 2202
         sigma_value = 10.0
         sigma_fixed = Dict("sigma" => sigma_value)
 
-        vff_5d_5d_test =
+        vff_5d_2d_test =
             VectorFourierFeature(n_features, output_dim, feature_sampler_5d, feature_parameters = sigma_fixed)
 
-        # 1D input space -> 5D output space
+        # and a flat one
+        dist = MvNormal(zeros(input_dim * output_dim), Diagonal(ones(input_dim * output_dim))) #produces 10-length vector samples
+        pd = ParameterDistribution(
+            Dict(
+                "distribution" => Parameterized(dist),
+                "constraint" => repeat([no_constraint()], input_dim * output_dim),
+                "name" => "xi",
+            ),
+        )
+        feature_sampler_10dflat = FeatureSampler(pd, output_dim, rng = copy(rng))
+
+        vff_10dflat_test =
+            VectorFourierFeature(n_features, output_dim, feature_sampler_10dflat, feature_parameters = sigma_fixed)
+
+
+        # 5D input space -> 2D output space
         n_samples = 200
-        inputs_5d_5d = rand(Uniform(-1, 1), (input_dim, n_samples))
-        features_5d_5d = build_features(vff_5d_5d_test, inputs_5d_5d)
+        inputs_5d_2d = rand(Uniform(-1, 1), (input_dim, n_samples))
+        features_5d_2d = build_features(vff_5d_2d_test, inputs_5d_2d)
 
         rng1 = copy(rng)
         samp_flat = sample(rng1, feature_sampler_5d, n_features)
         samp_xi_flat = get_distribution(samp_flat)["xi"]
         # as we flatten the samples currently in the sampler.sample. reshape with dist.
-        xi_size = size(get_distribution(pd)["xi"])
-        samp_xi = reshape(samp_xi_flat, (xi_size[1], xi_size[2], size(samp_xi_flat, 2))) # in x out x n_feature_batch
+        samp_xi = reshape(samp_xi_flat, (input_dim, output_dim, size(samp_xi_flat, 2))) # in x out x n_feature_batch
 
-        @tullio features[n, p, b] := inputs_5d_5d[d, n] * samp_xi[d, p, b]
-        #        samp_xi = reshape(sample(rng1, pd, n_features), (2, n_features))
+        @tullio features[n, p, b] := inputs_5d_2d[d, n] * samp_xi[d, p, b]
         samp_bias = get_distribution(samp_flat)["bias"]
         @tullio features[n, p, b] += samp_bias[p, b]
 
-        #        inputs_5d_5d_T = permutedims(inputs_5d_5d, (2, 1))
         rf_test = sigma_value * cos.(features)
-        #        rf_test = sigma_value * cos.(inputs_5d_5d_T * samp_xi .+ samp_unif)
-        @test size(features_5d_5d) == (n_samples, output_dim, n_features) # we store internally with output_dim = 1
-        @test all(abs.(rf_test - features_5d_5d) .< 1e3 * eps()) # sufficiently big to deal with inaccuracy of cosine
+        @test size(features_5d_2d) == (n_samples, output_dim, n_features) # we store internally with output_dim = 1
+        @test all(abs.(rf_test - features_5d_2d) .< 1e3 * eps()) # sufficiently big to deal with inaccuracy of cosine
+
+        features_10dflat = build_features(vff_10dflat_test, inputs_5d_2d)
+
+        rng1 = copy(rng)
+        samp_flat = sample(rng1, feature_sampler_10dflat, n_features)
+        samp_xi_flat = get_distribution(samp_flat)["xi"]
+        # as we flatten the samples currently in the sampler.sample. reshape with dist.
+        samp_xi = reshape(samp_xi_flat, (input_dim, output_dim, size(samp_xi_flat, 2))) # in x out x n_feature_batch
+
+        @tullio features[n, p, b] := inputs_5d_2d[d, n] * samp_xi[d, p, b]
+        samp_bias = get_distribution(samp_flat)["bias"]
+        @tullio features[n, p, b] += samp_bias[p, b]
+
+        rf_test = sigma_value * cos.(features)
+        #        rf_test = sigma_value * cos.(inputs_5d_2d_T * samp_xi .+ samp_unif)
+        @test size(features_10dflat) == (n_samples, output_dim, n_features) # we store internally with output_dim = 1
+        @test all(abs.(rf_test - features_10dflat) .< 1e3 * eps()) # sufficiently big to deal with inaccuracy of cosine
+
 
 
     end

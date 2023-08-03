@@ -23,6 +23,15 @@ struct VectorFeature{S <: AbstractString, SF <: ScalarFunction} <: RandomFeature
     feature_parameters::Union{Dict{String}, Nothing}
 end
 
+
+"""
+$(TYPEDSIGNATURES)
+
+gets the output dimension (equals 1 for scalar-valued features)
+"""
+get_output_dim(rf::VectorFeature) = rf.output_dim
+
+
 # common constructors
 """
 $(TYPEDSIGNATURES)
@@ -99,19 +108,16 @@ function build_features(
 
     # build: sigma * scalar_function(xi * input + b)
     samp = get_feature_sample(rf)
-
+    input_dim = size(inputs, 1)
+    output_dim = get_output_dim(rf)
     #TODO: What we want:
     # xi = get_distribution(samp)["xi"][:,:,batch_feature_idx] # input_dim x output_dim x n_feature_batch
     # for now, as matrix distributions aren't yet supported, xi is flattened, so we reshape
     xi_flat = get_distribution(samp)["xi"][:, batch_feature_idx] # (input_dim x output_dim) x n_feature_batch
     sampler = get_feature_sampler(rf)
     pd = get_parameter_distribution(sampler)
-    xi_size = size(get_distribution(pd)["xi"])
-    if length(xi_size) > 1
-        xi = reshape(xi_flat, (xi_size[1], xi_size[2], size(xi_flat, 2))) # in x out x n_feature_batch
-    else
-        xi = reshape(xi_flat, xi_size[1], 1, size(xi_flat, 2)) # in x out x n_feature_batch
-    end
+
+    xi = reshape(xi_flat, input_dim, output_dim, size(xi_flat, 2))
     features = zeros(size(inputs, 2), size(xi, 2), size(xi, 3))
     @tullio features[n, p, b] = inputs[d, n] * xi[d, p, b] # n_samples x output_dim x n_feature_batch
 
@@ -131,10 +137,3 @@ end
 
 build_features(rf::VectorFeature, inputs::M) where {M <: AbstractMatrix} =
     build_features(rf, inputs, collect(1:get_n_features(rf)))
-
-"""
-$(TYPEDSIGNATURES)
-
-gets the output dimension (equals 1 for scalar-valued features)
-"""
-get_output_dim(rf::VectorFeature) = rf.output_dim
