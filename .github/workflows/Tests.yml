@@ -3,10 +3,8 @@ name: Run Tests
 on:
   pull_request:
   push:
-    branches:
-      - staging
-      - trying
-      - main
+    tags: '*'
+    
 jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
@@ -15,7 +13,7 @@ jobs:
        matrix:
         version:
           - '1.6' # Long-Term Support release
-          - '1.8' # Latest 1.x release of julia
+          - '1' # Latest 1.x release of julia
         os:
           - ubuntu-latest
           - windows-latest
