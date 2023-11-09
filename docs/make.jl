@@ -37,7 +37,6 @@ makedocs(
     pages = pages,
     modules = [RandomFeatures],
     doctest = true,
-    strict = true,
     clean = true,
     checkdocs = :none,
 )
