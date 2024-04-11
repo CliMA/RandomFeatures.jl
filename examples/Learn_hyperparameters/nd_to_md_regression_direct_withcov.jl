@@ -123,6 +123,7 @@ function RFM_from_hyperparameters(
             "name" => "xi",
         ),
     )
+
     feature_sampler = FeatureSampler(pd, output_dim, rng = rng)
     vff = VectorFourierFeature(n_features, output_dim, feature_sampler)
 
@@ -176,8 +177,8 @@ function calculate_mean_cov_and_coeffs(
     predict!(rfm, fitted_features, DataContainer(itest), mean_store, cov_store, buffer)
     # sizes (output_dim x n_test), (output_dim x output_dim x n_test) 
 
-    scaled_coeffs = 0
-
+    
+    scaled_coeffs = 1/sqrt(n_features) * norm(get_coeffs(fitted_features))
 
     if decomp_type == "chol"
         chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
@@ -186,7 +187,7 @@ function calculate_mean_cov_and_coeffs(
         svd_singval = get_decomposition(get_feature_factors(fitted_features)).S
         complexity = sum(log, svd_singval) # note this is log(abs(det))
     end
-    complexity = sqrt(abs(complexity)) #abs can introduce nonconvexity, 
+    complexity = sqrt(complexity) # complexity must be positive
     
     println("sample_complexity", complexity)
     return scaled_coeffs, complexity
@@ -201,7 +202,8 @@ function estimate_mean_and_coeffnorm_covariance(
     n_features::Int,
     batch_sizes::Dict{S, Int},
     io_pairs::PairedDataContainer,
-    n_samples::Int;
+    n_samples::Int,
+    y;
     repeats::Int = 1,
 ) where {
     RNG <: AbstractRNG,
@@ -240,7 +242,7 @@ function estimate_mean_and_coeffnorm_covariance(
             # cplxty 1
 
             # update vbles needed for cov
-            means[:, i, :] .+= mtmp ./ repeats
+            means[:, i, :] .+= (y - mtmp) ./ repeats
             coeffl2norm[1, i] += sqrt(sum(abs2, c)) / repeats
             complexity[1, i] += cplxty / repeats
 
@@ -281,7 +283,8 @@ function calculate_ensemble_mean_and_coeffnorm(
     lambda::L,
     n_features::Int,
     batch_sizes::Dict{S, Int},
-    io_pairs::PairedDataContainer;
+    io_pairs::PairedDataContainer,
+    y;
     repeats::Int = 1,
 ) where {
     RNG <: AbstractRNG,
@@ -324,7 +327,7 @@ function calculate_ensemble_mean_and_coeffnorm(
             # m output_dim x n_test
             # v output_dim x output_dim x n_test
             # c n_features
-            means[:, i, :] += mtmp ./ repeats
+            means[:, i, :] += (y-mtmp) ./ repeats
             @. mean_of_covs += moc_tmp / (repeats * N_ens)
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
             complexity[1, i] += cplxty / repeats
@@ -377,10 +380,10 @@ end
     x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
 
     # diagonal noise
-    #cov_mat = Diagonal((5e-2)^2 * ones(output_dim))
-    #cov_mat = (5e-2)^2*I
+    cov_mat = Diagonal((5e-2)^2 * ones(output_dim))
+    #cov_mat = (5e-2)^2*I(output_dim)
     # correlated noise
-    cov_mat = convert(Matrix,Tridiagonal((5e-3) * ones(2), (2e-2) * ones(3), (5e-3) * ones(2)))
+    #cov_mat = convert(Matrix,Tridiagonal((5e-3) * ones(2), (2e-2) * ones(3), (5e-3) * ones(2)))
 
     noise_dist = MvNormal(zeros(output_dim), cov_mat)
     noise = rand(rng, noise_dist, n_data)
@@ -435,6 +438,7 @@ end
             batch_sizes,
             io_pairs,
             n_samples,
+            y[:, (n_train + 1):end],
             repeats = repeats,
         )
         
@@ -446,7 +450,9 @@ end
     end
 
     Γ = internal_Γ
-    Γ[1:(n_test * output_dim), 1:(n_test * output_dim)] += I
+    for i = 1:(n_test-1)
+        Γ[((i-1) * output_dim + 1):(i * output_dim), ((i-1) * output_dim + 1):(i * output_dim)] += lambda[:,:]
+    end
     Γ[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
     println(
         "Estimated variance. Tr(cov) = ",
@@ -467,7 +473,7 @@ end
     params_init = transform_unconstrained_to_constrained(priors, initial_params)#[1, :]
     println("Prior gives parameters between: [$(minimum(params_init)),$(maximum(params_init))]")
 
-
+    #=
     min_complexity =
         isa(lambda, UniformScaling) ? n_features_opt * log(lambda.λ) :
         n_features_opt / output_dim * 2 * sum(log.(diag(cholesky(lambda).L)))
@@ -475,9 +481,10 @@ end
 
 
     data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
-
-    
     println("min_complexity: ", min_complexity)
+    =#
+    data = zeros(size(Γ,1))
+    
 
     ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data[:], Γ, Inversion())]
     err = zeros(N_iter)
@@ -495,6 +502,7 @@ end
             n_features_opt,
             batch_sizes,
             io_pairs,
+            y[:, (n_train + 1):end],
             repeats = repeats,
         )
 
@@ -510,11 +518,12 @@ end
                 batch_sizes,
                 io_pairs,
                 n_samples,
+                y[:, (n_train + 1):end],
                 repeats = repeats,
             )
             Γ_new = internal_Γ_new
-            Γ_new[1:(n_test * output_dim), 1:(n_test * output_dim)] += approx_σ2_new
-            Γ_new[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
+           # Γ_new[1:(n_test * output_dim), 1:(n_test * output_dim)] += approx_σ2_new
+           # Γ_new[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
             println(
                 "Estimated variance. Tr(cov) = ",
                 tr(Γ_new[1:n_test, 1:n_test]),
