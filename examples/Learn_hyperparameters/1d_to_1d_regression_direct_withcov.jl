@@ -157,7 +157,7 @@ end
 ## Begin Script, define problem setting
 
 println("starting script")
-date_of_run = Date(2022, 9, 14)
+date_of_run = Date(2024, 4, 10)
 
 
 # Target function
@@ -254,7 +254,7 @@ for (idx, type) in enumerate(feature_types)
             string(i) *
             ", Error: " *
             string(err[i]) *
-            ", with parameter mean" *
+            ", with parameter mean " *
             string(mean(transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1])), dims = 2)[:, 1]),
             " and sd ",
             string(sqrt.(var(transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1])), dims = 2))[:, 1]),
@@ -298,7 +298,7 @@ for (idx, sd, feature_type) in zip(collect(1:length(σ_c)), σ_c, feature_types)
     end
 
     push!(rfms, RandomFeatureMethod(sf, batch_sizes = batch_sizes, regularization = regularizer))
-    push!(fits, fit(rfms[end], io_pairs_test, decomposition_type = "qr"))
+    push!(fits, fit(rfms[end], io_pairs_test))
 end
 
 if PLOT_FLAG

@@ -93,7 +93,7 @@ function calculate_mean_cov_and_coeffs(
 
     # build and fit the RF
     rfm = RFM_from_hyperparameters(rng, l, regularizer, n_features, batch_sizes, input_dim)
-    fitted_features = fit(rfm, io_train_cost, decomposition_type = "svd")
+    fitted_features = fit(rfm, io_train_cost)
 
     test_batch_size = get_batch_size(rfm, "test")
     batch_inputs = batch_generator(itest, test_batch_size, dims = 2) # input_dim x batch_size
@@ -174,7 +174,7 @@ end
 
 ## Begin Script, define problem setting
 println("Begin script")
-date_of_run = Date(2022, 9, 22)
+date_of_run = Date(2024, 4, 10)
 input_dim_list = [8]
 
 for input_dim in input_dim_list
@@ -368,7 +368,7 @@ for input_dim in input_dim_list
     #second case with batching
 
     rfm_batch = RandomFeatureMethod(sff, batch_sizes = batch_sizes, regularization = regularizer)
-    fitted_batched_features = fit(rfm_batch, io_pairs_test, decomposition_type = "svd")
+    fitted_batched_features = fit(rfm_batch, io_pairs_test)
 
     if PLOT_FLAG
         #plot slice through one dimensions, others fixed to 0

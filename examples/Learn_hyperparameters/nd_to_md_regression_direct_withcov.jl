@@ -26,7 +26,6 @@ using RandomFeatures.Samplers
 using RandomFeatures.Features
 using RandomFeatures.Methods
 using RandomFeatures.Utilities
-using ProfileView
 
 seed = 2024
 ekp_seed = 99999
@@ -139,7 +138,8 @@ function calculate_mean_cov_and_coeffs(
     batch_sizes::Dict{S, Int},
     io_pairs::PairedDataContainer,
     mean_store::Matrix{FT},
-    cov_store::Array{FT, 3};
+    cov_store::Array{FT, 3},
+    buffer::Array{FT,3};
     decomp_type::S = "chol",
 ) where {
     RNG <: AbstractRNG,
@@ -173,24 +173,22 @@ function calculate_mean_cov_and_coeffs(
 
     #we want to calc 1/var(y-mean)^2 + lambda/m * coeffs^2 in the end
     #    pred_mean, pred_cov = predict(rfm, fitted_features, DataContainer(itest))
-    predict!(rfm, fitted_features, DataContainer(itest), mean_store, cov_store)
+    predict!(rfm, fitted_features, DataContainer(itest), mean_store, cov_store, buffer)
     # sizes (output_dim x n_test), (output_dim x output_dim x n_test) 
-    scaled_coeffs = sqrt(1 / n_features) * get_coeffs(fitted_features)
-    reg = get_regularization(fitted_features)
-    #    if !isa(reg, UniformScaling)
-    #        println("diag of reg: ",diag(reg))
-    #        println("det of reg: ", det(reg))
-    #    end
+
+    scaled_coeffs = 0
+
+
     if decomp_type == "chol"
         chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
-        complexity = 2 * sum(log.(diag(chol_fac)))
+        complexity = 2 * sum(log(chol_fac[i, i]) for i in 1:size(chol_fac, 1))
     else
         svd_singval = get_decomposition(get_feature_factors(fitted_features)).S
-        complexity = sum(log.(svd_singval)) # note this is log(abs(det))    
+        complexity = sum(log, svd_singval) # note this is log(abs(det))
     end
+    complexity = sqrt(abs(complexity)) #abs can introduce nonconvexity, 
+    
     println("sample_complexity", complexity)
-
-    #    return pred_mean, pred_cov, scaled_coeffs, complexity
     return scaled_coeffs, complexity
 
 end
@@ -214,56 +212,64 @@ function estimate_mean_and_coeffnorm_covariance(
     n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
     n_test = size(get_inputs(io_pairs), 2) - n_train
     output_dim = size(get_outputs(io_pairs), 1)
-    #    means = zeros(n_test, n_samples, output_dim)
-    #    covs = zeros(n_test, n_samples, output_dim, output_dim)
+
     means = zeros(output_dim, n_samples, n_test)
-    covs = zeros(output_dim, n_samples, output_dim, n_test)
+    mean_of_covs = zeros(output_dim, output_dim, n_test)
+    moc_tmp = similar(mean_of_covs)
+    mtmp = zeros(output_dim, n_test)
+    buffer = zeros(n_test, output_dim, n_features)
     complexity = zeros(1, n_samples)
     coeffl2norm = zeros(1, n_samples)
-    #    mtmp = zeros(output_dim,n_test)
-    #    vtmp = zeros(output_dim,output_dim,n_test)
-    ctmp = zeros(n_features)
 
     for i in 1:n_samples
         for j in 1:repeats
-            ctmp[:], cplxtytmp = calculate_mean_cov_and_coeffs(
+            c, cplxty = calculate_mean_cov_and_coeffs(
                 rng,
                 l,
                 lambda,
                 n_features,
                 batch_sizes,
                 io_pairs,
-                means[:, i, :],
-                covs[:, i, :, :],
+                mtmp,
+                moc_tmp,
+                buffer,
             )
             # m output_dim x n_test
             # v output_dim x output_dim x n_test
             # c n_features
-            #            means[:, i, :] += mtmp' ./ repeats
-            #            covs[:, i, :, :] += vtmp ./ repeats
-            coeffl2norm[1, i] += sqrt(sum(ctmp .^ 2)) / repeats
-            complexity[1, i] += cplxtytmp / repeats
+            # cplxty 1
+
+            # update vbles needed for cov
+            means[:, i, :] .+= mtmp ./ repeats
+            coeffl2norm[1, i] += sqrt(sum(abs2, c)) / repeats
+            complexity[1, i] += cplxty / repeats
+
+            # update vbles needed for mean
+            @. mean_of_covs += moc_tmp / (repeats * n_samples)
 
         end
     end
     means = permutedims(means, (3, 2, 1))
-    covs = permutedims(covs, (4, 2, 1, 3))
+    mean_of_covs = permutedims(mean_of_covs, (3, 1, 2))
 
-
-    blockcovmat = zeros(n_samples, n_test * output_dim, n_test * output_dim)
+    approx_σ2 = zeros(n_test * output_dim, n_test * output_dim)
     blockmeans = zeros(n_test * output_dim, n_samples)
     for i in 1:n_test
         id = ((i - 1) * output_dim + 1):(i * output_dim)
-        blockcovmat[:, id, id] = covs[i, :, :, :] # this ordering, so we can take a mean/cov in dims = 2.
+        approx_σ2[id, id] = mean_of_covs[i, :, :] # this ordering, so we can take a mean/cov in dims = 2.
         blockmeans[id, :] = permutedims(means[i, :, :], (2, 1))
     end
 
-    Γ = cov(vcat(blockmeans, coeffl2norm, complexity), dims = 2)
-    approx_σ2 = mean(blockcovmat, dims = 1)[1, :, :] # approx of \sigma^2I +rf var
+    sample_mat = vcat(blockmeans, coeffl2norm, complexity) 
+    Γ = cov(sample_mat, dims = 2)
+
     if !isposdef(approx_σ2)
-        println("approx_σ2 not posdef - correcting")
+        println("approx_σ2 not posdef")
         approx_σ2 = posdef_correct(approx_σ2)
     end
+
+    return Γ, approx_σ2
+   
 
     return Γ, approx_σ2
 
@@ -293,65 +299,59 @@ function calculate_ensemble_mean_and_coeffnorm(
     n_test = size(get_inputs(io_pairs), 2) - n_train
     output_dim = size(get_outputs(io_pairs), 1)
 
-    #    means = zeros(n_test, N_ens, output_dim)
-    #    covs = zeros(n_test, N_ens, output_dim, output_dim)
     means = zeros(output_dim, N_ens, n_test)
-    covs = zeros(output_dim, N_ens, output_dim, n_test)
+    mean_of_covs = zeros(output_dim, output_dim, n_test)
+    buffer = zeros(n_test, output_dim, n_features)
     complexity = zeros(1, N_ens)
     coeffl2norm = zeros(1, N_ens)
-    #    mtmp = zeros(output_dim,n_test)
-    #    vtmp = zeros(output_dim,output_dim,n_test)
-    ctmp = zeros(n_features)
-
-    rfm_store = []
-    ff_store = []
-
+    moc_tmp = similar(mean_of_covs)
+    mtmp = zeros(output_dim, n_test)
 
     for i in collect(1:N_ens)
         for j in collect(1:repeats)
             l = lmat[:, i]
-            ctmp[:], cplxtytmp = calculate_mean_cov_and_coeffs(
+            c, cplxty = calculate_mean_cov_and_coeffs(
                 rng,
                 l,
                 lambda,
                 n_features,
                 batch_sizes,
                 io_pairs,
-                means[:, i, :],
-                covs[:, i, :, :],
+                mtmp,
+                moc_tmp,
+                buffer,
             )
             # m output_dim x n_test
             # v output_dim x output_dim x n_test
             # c n_features
-            #            means[:, i, :] += mtmp' ./ repeats
-            #            covs[:, i, :, :] += vtmp ./ repeats
-            coeffl2norm[1, i] += sqrt(sum(ctmp .^ 2)) / repeats
-            complexity[1, i] += cplxtytmp / repeats
+            means[:, i, :] += mtmp ./ repeats
+            @. mean_of_covs += moc_tmp / (repeats * N_ens)
+            coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
+            complexity[1, i] += cplxty / repeats
         end
     end
-    means = permutedims(means, (3, 2, 1)) # n_test x 
-    covs = permutedims(covs, (4, 2, 1, 3)) #n_test x N_ens x output_dim x output_dim
-
-    blockcovmat = zeros(N_ens, n_test * output_dim, n_test * output_dim)
+    means = permutedims(means, (3, 2, 1))
+    mean_of_covs = permutedims(mean_of_covs, (3, 1, 2))
+    blockcovmat = zeros(n_test * output_dim, n_test * output_dim)
     blockmeans = zeros(n_test * output_dim, N_ens)
     for i in 1:n_test
         id = ((i - 1) * output_dim + 1):(i * output_dim)
-        blockcovmat[:, id, id] = covs[i, :, :, :]
+        blockcovmat[id, id] = mean_of_covs[i, :, :]
         blockmeans[id, :] = permutedims(means[i, :, :], (2, 1))
     end
-    blockcovmat = mean(blockcovmat, dims = 1)[1, :, :] # np x np
 
     if !isposdef(blockcovmat)
-        println("blockcovmat not posdef - correcting")
+        println("blockcovmat not posdef")
         blockcovmat = posdef_correct(blockcovmat)
     end
+
     return vcat(blockmeans, coeffl2norm, complexity), blockcovmat
 end
 
 @time begin
     ## Begin Script, define problem setting
     println("Begin script")
-    date_of_run = Date(2022, 11, 10)
+    date_of_run = Date(2024, 4, 10)
 
     input_dim = 1
     output_dim = 3
@@ -377,18 +377,18 @@ end
     x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
 
     # diagonal noise
-    cov_mat = Diagonal((5e-2)^2 * ones(output_dim))
+    #cov_mat = Diagonal((5e-2)^2 * ones(output_dim))
     #cov_mat = (5e-2)^2*I
     # correlated noise
-    #cov_mat = convert(Matrix,Tridiagonal((5e-3) * ones(2), (2e-2) * ones(3), (5e-3) * ones(2)))
+    cov_mat = convert(Matrix,Tridiagonal((5e-3) * ones(2), (2e-2) * ones(3), (5e-3) * ones(2)))
 
     noise_dist = MvNormal(zeros(output_dim), cov_mat)
     noise = rand(rng, noise_dist, n_data)
 
     # simple regularization
-    lambda = exp((1 / output_dim) * sum(log.(eigvals(cov_mat)))) * I
+    #lambda = exp((1 / output_dim) * sum(log.(eigvals(cov_mat)))) * I
     # more complex
-    #lambda = cov_mat
+    lambda = cov_mat
 
 
     y = ftest_1d_to_3d(x) + noise
@@ -437,16 +437,7 @@ end
             n_samples,
             repeats = repeats,
         )
-        #=   @profview estimate_mean_and_coeffnorm_covariance(
-                rng,
-                repeat([μ_l], n_l), # take mean values
-                lambda,
-                n_features_opt,
-                batch_sizes,
-                io_pairs,
-                n_samples,
-                repeats = repeats,
-            )=#
+        
         save("calculated_truth_cov.jld2", "internal_Γ", internal_Γ, "approx_σ2", approx_σ2)
     else
         println("Loading truth covariance from file...")
@@ -455,7 +446,7 @@ end
     end
 
     Γ = internal_Γ
-    Γ[1:(n_test * output_dim), 1:(n_test * output_dim)] += approx_σ2
+    Γ[1:(n_test * output_dim), 1:(n_test * output_dim)] += I
     Γ[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
     println(
         "Estimated variance. Tr(cov) = ",
@@ -476,19 +467,16 @@ end
     params_init = transform_unconstrained_to_constrained(priors, initial_params)#[1, :]
     println("Prior gives parameters between: [$(minimum(params_init)),$(maximum(params_init))]")
 
-    if isa(lambda, Real)
-        min_complexity = n_features_opt * log(lambda)
-        data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
-    elseif isa(lambda, UniformScaling)
-        min_complexity = n_features_opt * log(lambda.λ)
-        data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
-    else
-        min_complexity = (n_features_opt / output_dim) * 2 * sum(log.(diag(cholesky(lambda).L)))
-        # TODO: SOLVE EVAL PROBLEM TO FIT WITH THIS DATA. the following is just a fudge to get reasonable scaling and not a global truth
-        min_complexity *= 1
 
-        data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
-    end
+    min_complexity =
+        isa(lambda, UniformScaling) ? n_features_opt * log(lambda.λ) :
+        n_features_opt / output_dim * 2 * sum(log.(diag(cholesky(lambda).L)))
+    min_complexity = sqrt(abs(min_complexity))
+
+
+    data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
+
+    
     println("min_complexity: ", min_complexity)
 
     ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data[:], Γ, Inversion())]
