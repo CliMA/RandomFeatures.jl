@@ -111,9 +111,9 @@ The keyword `feature_parameters = Dict("sigma" => a)`, can be included to set th
 
 The `RandomFeatureMethod` sets up the training problem to learn coefficients ``\beta\in\mathbb{R}^m`` from input-output training data ``(x,y)=\{(x_i,y_i)\}_{i=1}^n``, ``y_i \in \mathbb{R}`` and parameters ``\theta = \{\theta_j\}_{j=1}^m``:
 ```math
-(\frac{1}{m}\Phi^T(x;\theta) \Phi(x;\theta) + \lambda I) \beta = \Phi^T(x;\theta)y
+(\frac{1}{\lambda m}\Phi^T(x;\theta) \Phi(x;\theta) + I) \beta = \frac{1}{\lambda}\Phi^T(x;\theta)y
 ```
-Where ``\lambda I`` is a regularization.
+Where ``\lambda>0`` is a regularization parameter that effects the `+I`. The equation is written in this way to be consistent with the vector-output case.
 ```julia
 rfm = RandomFeatureMethod(
     sf;
