@@ -67,7 +67,7 @@ function RandomFeatureMethod(
     end
 
     if isa(regularization, Real)
-        if regularization <=0
+        if regularization <= 0
             @info "input regularization <=0 is invalid, using regularization = 1e12*eps()"
             λ = 1e12 * eps() * I
         else
@@ -78,7 +78,7 @@ function RandomFeatureMethod(
             tol = 1e12 * eps() #MAGIC NUMBER
             λ = posdef_correct(regularization, tol = tol)
             @warn "input regularization matrix is not positive definite, replacing with nearby positive definite matrix"
-        else     
+        else
             λ = regularization
         end
     end
@@ -92,7 +92,7 @@ function RandomFeatureMethod(
     else
         λinv = λ
     end
-    
+
     return RandomFeatureMethod{S, typeof(λ)}(random_feature, batch_sizes, λinv, tullio_threading)
 end
 
@@ -205,10 +205,10 @@ function fit(
     λinv = get_regularization(rfm)
     Phi = build_features(rf, input)
     FT = eltype(Phi)
-        
+
     PhiTλinv = zeros(size(Phi))
-    PhiTλinvY = zeros(n_features) 
-    PhiTλinvPhi = zeros(n_features, n_features) 
+    PhiTλinvY = zeros(n_features)
+    PhiTλinvPhi = zeros(n_features, n_features)
     if !tullio_threading
         if isa(λinv, UniformScaling)
             PhiTλinv = Phi * λinv.λ
@@ -239,7 +239,7 @@ function fit(
     end
     feature_factors = Decomposition(PhiTλinvPhi, decomposition_type)
     # bottleneck for small problems only (much quicker than PhiTPhi for big problems)
-    
+
     coeffs = linear_solve(feature_factors, PhiTλinvY, tullio_threading = tullio_threading) #n_features x n_samples x dim_output
 
     return Fit{typeof(coeffs), typeof(λinv)}(feature_factors, coeffs, λinv)
@@ -557,15 +557,15 @@ function predictive_cov!(
             ),
         )
     end
-    
+
     if !tullio_threading
         @tullio threads = 10^9 buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o] # = betahat(x')
-        @tullio threads = 10^9 cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o] 
+        @tullio threads = 10^9 cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
     else
         @tullio buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o] # = betahat(x')
         @tullio cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
     end
-    @. cov_store /= FT(n_features) 
+    @. cov_store /= FT(n_features)
 
     nothing
 end

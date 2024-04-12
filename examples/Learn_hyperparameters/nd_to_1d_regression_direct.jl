@@ -362,8 +362,8 @@ if PLOT_FLAG
         yslice = ftest_nd_to_1d(xslicenew)
 
         pred_mean_slice, pred_cov_slice = predict(rfm_batch, fitted_batched_features, DataContainer(xslicenew))
-        pred_cov_slice = max.(pred_cov_slice[1,1,:], 0.0)
-        
+        pred_cov_slice = max.(pred_cov_slice[1, 1, :], 0.0)
+
         plt = plot(
             xrange,
             yslice',

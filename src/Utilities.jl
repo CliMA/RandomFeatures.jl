@@ -117,7 +117,7 @@ function Decomposition(
         return Decomposition{Factor, typeof(mat), Base.return_types(svd, (typeof(mat),))[1]}(mat, fmat, inv(fmat))
     elseif method == "cholesky"
         if !isposdef(mat)
-#            @info "Random Feature system not positive definite. Performing cholesky factorization with a close positive definite matrix"
+            #            @info "Random Feature system not positive definite. Performing cholesky factorization with a close positive definite matrix"
             mat = posdef_correct(mat, tol = nugget)
         end
         fmat = cholesky(mat)

@@ -140,7 +140,7 @@ function calculate_mean_cov_and_coeffs(
     io_pairs::PairedDataContainer,
     mean_store::Matrix{FT},
     cov_store::Array{FT, 3},
-    buffer::Array{FT,3};
+    buffer::Array{FT, 3};
     decomp_type::S = "chol",
 ) where {
     RNG <: AbstractRNG,
@@ -177,8 +177,8 @@ function calculate_mean_cov_and_coeffs(
     predict!(rfm, fitted_features, DataContainer(itest), mean_store, cov_store, buffer)
     # sizes (output_dim x n_test), (output_dim x output_dim x n_test) 
 
-    
-    scaled_coeffs = 1/sqrt(n_features) * norm(get_coeffs(fitted_features))
+
+    scaled_coeffs = 1 / sqrt(n_features) * norm(get_coeffs(fitted_features))
 
     if decomp_type == "chol"
         chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
@@ -188,7 +188,7 @@ function calculate_mean_cov_and_coeffs(
         complexity = sum(log, svd_singval) # note this is log(abs(det))
     end
     complexity = sqrt(complexity) # complexity must be positive
-    
+
     println("sample_complexity", complexity)
     return scaled_coeffs, complexity
 
@@ -225,17 +225,8 @@ function estimate_mean_and_coeffnorm_covariance(
 
     for i in 1:n_samples
         for j in 1:repeats
-            c, cplxty = calculate_mean_cov_and_coeffs(
-                rng,
-                l,
-                lambda,
-                n_features,
-                batch_sizes,
-                io_pairs,
-                mtmp,
-                moc_tmp,
-                buffer,
-            )
+            c, cplxty =
+                calculate_mean_cov_and_coeffs(rng, l, lambda, n_features, batch_sizes, io_pairs, mtmp, moc_tmp, buffer)
             # m output_dim x n_test
             # v output_dim x output_dim x n_test
             # c n_features
@@ -262,7 +253,7 @@ function estimate_mean_and_coeffnorm_covariance(
         blockmeans[id, :] = permutedims(means[i, :, :], (2, 1))
     end
 
-    sample_mat = vcat(blockmeans, coeffl2norm, complexity) 
+    sample_mat = vcat(blockmeans, coeffl2norm, complexity)
     Γ = cov(sample_mat, dims = 2)
 
     if !isposdef(approx_σ2)
@@ -271,7 +262,7 @@ function estimate_mean_and_coeffnorm_covariance(
     end
 
     return Γ, approx_σ2
-   
+
 
     return Γ, approx_σ2
 
@@ -313,21 +304,12 @@ function calculate_ensemble_mean_and_coeffnorm(
     for i in collect(1:N_ens)
         for j in collect(1:repeats)
             l = lmat[:, i]
-            c, cplxty = calculate_mean_cov_and_coeffs(
-                rng,
-                l,
-                lambda,
-                n_features,
-                batch_sizes,
-                io_pairs,
-                mtmp,
-                moc_tmp,
-                buffer,
-            )
+            c, cplxty =
+                calculate_mean_cov_and_coeffs(rng, l, lambda, n_features, batch_sizes, io_pairs, mtmp, moc_tmp, buffer)
             # m output_dim x n_test
             # v output_dim x output_dim x n_test
             # c n_features
-            means[:, i, :] += (y-mtmp) ./ repeats
+            means[:, i, :] += (y - mtmp) ./ repeats
             @. mean_of_covs += moc_tmp / (repeats * N_ens)
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
             complexity[1, i] += cplxty / repeats
@@ -380,16 +362,16 @@ end
     x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
 
     # diagonal noise
-    cov_mat = Diagonal((5e-2)^2 * ones(output_dim))
+    #    cov_mat = Diagonal((5e-2)^2 * ones(output_dim))
     #cov_mat = (5e-2)^2*I(output_dim)
     # correlated noise
-    #cov_mat = convert(Matrix,Tridiagonal((5e-3) * ones(2), (2e-2) * ones(3), (5e-3) * ones(2)))
+    cov_mat = convert(Matrix, Tridiagonal((5e-3) * ones(2), (2e-2) * ones(3), (5e-3) * ones(2)))
 
     noise_dist = MvNormal(zeros(output_dim), cov_mat)
     noise = rand(rng, noise_dist, n_data)
 
     # simple regularization
-    #lambda = exp((1 / output_dim) * sum(log.(eigvals(cov_mat)))) * I
+    #lambda = exp((1 / output_dim) * sum(log.(eigvals(cov_mat)))) * I(output_dim)
     # more complex
     lambda = cov_mat
 
@@ -441,7 +423,7 @@ end
             y[:, (n_train + 1):end],
             repeats = repeats,
         )
-        
+
         save("calculated_truth_cov.jld2", "internal_Γ", internal_Γ, "approx_σ2", approx_σ2)
     else
         println("Loading truth covariance from file...")
@@ -450,8 +432,8 @@ end
     end
 
     Γ = internal_Γ
-    for i = 1:(n_test-1)
-        Γ[((i-1) * output_dim + 1):(i * output_dim), ((i-1) * output_dim + 1):(i * output_dim)] += lambda[:,:]
+    for i in 1:(n_test - 1)
+        Γ[((i - 1) * output_dim + 1):(i * output_dim), ((i - 1) * output_dim + 1):(i * output_dim)] += lambda[:, :]
     end
     Γ[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
     println(
@@ -483,8 +465,8 @@ end
     data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
     println("min_complexity: ", min_complexity)
     =#
-    data = zeros(size(Γ,1))
-    
+    data = zeros(size(Γ, 1))
+
 
     ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data[:], Γ, Inversion())]
     err = zeros(N_iter)
@@ -522,8 +504,8 @@ end
                 repeats = repeats,
             )
             Γ_new = internal_Γ_new
-           # Γ_new[1:(n_test * output_dim), 1:(n_test * output_dim)] += approx_σ2_new
-           # Γ_new[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
+            # Γ_new[1:(n_test * output_dim), 1:(n_test * output_dim)] += approx_σ2_new
+            # Γ_new[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
             println(
                 "Estimated variance. Tr(cov) = ",
                 tr(Γ_new[1:n_test, 1:n_test]),

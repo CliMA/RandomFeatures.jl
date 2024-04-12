@@ -158,7 +158,7 @@ date_of_run = Date(2024, 4, 10)
 # Target function
 ftest(x::AbstractVecOrMat) = exp.(-0.5 * x .^ 2) .* (x .^ 4 - x .^ 3 - x .^ 2 + x .- 1)
 
-n_data = 20 * 2 
+n_data = 20 * 2
 noise_sd = 0.1
 
 x = rand(rng, Uniform(-3, 3), n_data)
@@ -311,7 +311,7 @@ if PLOT_FLAG
     for (idx, rfm, fit, feature_type, clr) in zip(collect(1:length(σ_c)), rfms, fits, feature_types, clrs)
 
         pred_mean, pred_cov = predict(rfm, fit, DataContainer(xplt))
-        pred_cov = pred_cov[1,1,:] #just variances
+        pred_cov = pred_cov[1, 1, :] #just variances
         pred_cov = max.(pred_cov, 0.0) #not normally needed..
         plot!(
             xplt',
