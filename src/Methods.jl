@@ -43,7 +43,7 @@ struct RandomFeatureMethod{S <: AbstractString, USorM <: Union{UniformScaling, A
     random_feature::RandomFeature
     "A dictionary specifying the batch sizes. Must contain \"train\", \"test\", and \"feature\" keys"
     batch_sizes::Dict{S, Int}
-    "A positive definite matrix used during the fit method to regularize the linear solve"
+    "A positive definite matrix used during the fit method to regularize the linear solve, interpreted as the inverse of the observational noise covariance"
     regularization::USorM
     "Use multithreading provided by Tullio"
     tullio_threading::Bool
@@ -59,30 +59,41 @@ function RandomFeatureMethod(
     regularization::USorMorR = 1e12 * eps() * I,
     batch_sizes::Dict{S, Int} = Dict("train" => 0, "test" => 0, "feature" => 0),
     tullio_threading = true,
+    regularization_inverted::Bool = false,
 ) where {S <: AbstractString, USorMorR <: Union{<:Real, AbstractMatrix{<:Real}, UniformScaling}}
 
     if !all([key ∈ keys(batch_sizes) for key in ["train", "test", "feature"]])
         throw(ArgumentError("batch_sizes keys must contain all of \"train\", \"test\", and \"feature\""))
     end
+
     if isa(regularization, Real)
         if regularization <=0
             @info "input regularization <=0 is invalid, using regularization = 1e12*eps()"
-            lambda = 1e12 * eps() * I
+            λ = 1e12 * eps() * I
         else
-            lambda = regularization * I
+            λ = regularization * I
         end
     else
         if !isposdef(regularization) #check positive definiteness
             tol = 1e12 * eps() #MAGIC NUMBER
-            lambda = posdef_correct(regularization, tol = tol)
-            @warn "input regularization matrix is not positive definite, replacing with nearby positive definite matrix with minimum eigenvalue $tol"
-        else
-
-            lambda = regularization
+            λ = posdef_correct(regularization, tol = tol)
+            @warn "input regularization matrix is not positive definite, replacing with nearby positive definite matrix"
+        else     
+            λ = regularization
         end
     end
 
-    return RandomFeatureMethod{S, typeof(lambda)}(random_feature, batch_sizes, lambda, tullio_threading)
+    # we work with inverted regularization matrix
+    if regularization_inverted == false
+        if cond(regularization) > 10^8
+            @warn "The provided regularization is poorly conditioned: κ(reg) = cond(regularization). Imprecision or SingularException during inversion may occur."
+        end
+        λinv = inv(λ)
+    else
+        λinv = λ
+    end
+    
+    return RandomFeatureMethod{S, typeof(λ)}(random_feature, batch_sizes, λinv, tullio_threading)
 end
 
 """
@@ -102,7 +113,7 @@ get_batch_sizes(rfm::RandomFeatureMethod) = rfm.batch_sizes
 """
 $(TYPEDSIGNATURES)
 
-gets the `regularization` field
+gets the `regularization` field, this is the inverse of the provided matrix if keyword `regularization_inverted = false`
 """
 get_regularization(rfm::RandomFeatureMethod) = rfm.regularization
 
@@ -191,7 +202,7 @@ function fit(
     n_features = get_n_features(rf)
     #data are columns, batch over samples
 
-    lambda = get_regularization(rfm)
+    λinv = get_regularization(rfm)
     Phi = build_features(rf, input)
     FT = eltype(Phi)
         
@@ -199,19 +210,17 @@ function fit(
     PhiTλinvY = zeros(n_features) 
     PhiTλinvPhi = zeros(n_features, n_features) 
     if !tullio_threading
-        if isa(lambda, UniformScaling)
-            PhiTλinv = Phi / FT(lambda.λ)
+        if isa(λinv, UniformScaling)
+            PhiTλinv = Phi * λinv.λ
         else
-            λinv = inv(lambda) # must be PD?
             @tullio threads = 10^9 PhiTλinv[n, q, i] = Phi[n, p, i] * λinv[p, q]
         end
         @tullio threads = 10^9 PhiTλinvY[j] = PhiTλinv[n, p, j] * output[q, n]
         @tullio threads = 10^9 PhiTλinvPhi[i, j] = PhiTλinv[n, p, i] * Phi[n, p, j] # BOTTLENECK
     else
-        if isa(lambda,UniformScaling)
-            PhiTλinv = Phi / FT(lambda.λ)
+        if isa(λinv, UniformScaling)
+            PhiTλinv = Phi * λinv.λ
         else
-            λinv = inv(lambda) # must be PD?
             @tullio PhiTλinv[n, q, i] = Phi[n, p, i] * λinv[p, q]
         end
         @tullio PhiTλinvY[j] = PhiTλinv[n, p, j] * output[p, n]
@@ -233,7 +242,7 @@ function fit(
     
     coeffs = linear_solve(feature_factors, PhiTλinvY, tullio_threading = tullio_threading) #n_features x n_samples x dim_output
 
-    return Fit{typeof(coeffs), typeof(lambda)}(feature_factors, coeffs, lambda)
+    return Fit{typeof(coeffs), typeof(λinv)}(feature_factors, coeffs, λinv)
 end
 
 """
@@ -525,7 +534,6 @@ function predictive_cov!(
     rf = get_random_feature(rfm)
     tullio_threading = get_tullio_threading(rfm)
     n_features = get_n_features(rf)
-    lambda = get_regularization(fit)
 
     output_dim = get_output_dim(rf)
     coeffs = get_coeffs(fit)
