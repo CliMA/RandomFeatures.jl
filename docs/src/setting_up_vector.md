@@ -117,7 +117,7 @@ The keyword `feature_parameters = Dict("sigma" => a)`, can be included to set th
 
 The `RandomFeatureMethod` sets up the training problem to learn coefficients ``\beta\in\mathbb{R}^m`` from input-output training data ``(x,y)=\{(x_i,y_i)\}_{i=1}^n``, ``y_i \in \mathbb{R}^p``  and parameters ``\theta = \{\theta_j\}_{j=1}^m``. Regularization is provided through ``\Lambda``, a user-provided `p-by-p` positive-definite regularization matrix (or scaled identity). In Einstein summation notation the method solves the following system
 ```math
-(\frac{1}{m}\Phi_{n,i,p}(x;\theta) I_{n,m} \otimes \Lambda^{-1}_{p,q} \Phi_{n,j,q}(x;\theta) + I_{i,j}) \beta_j = \Phi(x;\theta)_{n,i,p} I_{n,m} \otimes \Lambda^{-1}_{p,q} y_{n,p}
+(\frac{1}{m}\Phi_{n,i,p}(x;\theta) \, [I_{n,m} \otimes \Lambda^{-1}_{p,q}]\, \Phi_{n,j,q}(x;\theta) + I_{i,j}) \beta_j = \Phi(x;\theta)_{n,i,p}\,[ I_{n,m} \otimes \Lambda^{-1}_{p,q}]\, y_{n,p}
 ```
 So long as ``\Lambda`` is easily invertible then this system is efficiently solved.       
 
