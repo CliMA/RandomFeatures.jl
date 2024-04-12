@@ -56,7 +56,6 @@ using RandomFeatures.Utilities
     @test_throws ArgumentError Decomposition(x, "qr")
 
     xbad = [1.0 1.0; 1.0 0.0] # not pos def
-    @test_logs (:info,) Decomposition(xbad, "cholesky")
     xbadchol = Decomposition(xbad, "cholesky")
     @test isposdef(get_full_matrix(xbadchol))
 

@@ -66,6 +66,7 @@ function RandomFeatureMethod(
         throw(ArgumentError("batch_sizes keys must contain all of \"train\", \"test\", and \"feature\""))
     end
 
+    # ToDo store cholesky factors
     if isa(regularization, Real)
         if regularization <= 0
             @info "input regularization <=0 is invalid, using regularization = 1e12*eps()"
@@ -215,7 +216,7 @@ function fit(
         else
             @tullio threads = 10^9 PhiTλinv[n, q, i] = Phi[n, p, i] * λinv[p, q]
         end
-        @tullio threads = 10^9 PhiTλinvY[j] = PhiTλinv[n, p, j] * output[q, n]
+        @tullio threads = 10^9 PhiTλinvY[j] = PhiTλinv[n, p, j] * output[p, n]
         @tullio threads = 10^9 PhiTλinvPhi[i, j] = PhiTλinv[n, p, i] * Phi[n, p, j] # BOTTLENECK
     else
         if isa(λinv, UniformScaling)
