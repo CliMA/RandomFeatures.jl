@@ -86,7 +86,7 @@ function calculate_mean_and_coeffs(
     batch_inputs = batch_generator(itest, test_batch_size, dims = 2) # input_dim x batch_size
 
     #we want to calc lambda/m * coeffs^2 in the end
-    pred_mean = predictive_mean(rfm, fitted_features, DataContainer(itest))
+    pred_mean, features = predictive_mean(rfm, fitted_features, DataContainer(itest))
     scaled_coeffs = sqrt(1 / n_features) * get_coeffs(fitted_features)
     return pred_mean, scaled_coeffs
 
@@ -152,13 +152,13 @@ end
 ## Begin Script, define problem setting
 
 println("starting script")
-date_of_run = Date(2022, 9, 14)
+date_of_run = Date(2024, 4, 10)
 
 
 # Target function
 ftest(x::AbstractVecOrMat) = exp.(-0.5 * x .^ 2) .* (x .^ 4 - x .^ 3 - x .^ 2 + x .- 1)
 
-n_data = 20 * 4
+n_data = 20 * 2
 noise_sd = 0.1
 
 x = rand(rng, Uniform(-3, 3), n_data)
@@ -285,7 +285,7 @@ for (idx, sd, feature_type) in zip(collect(1:length(σ_c)), σ_c, feature_types)
     end
 
     push!(rfms, RandomFeatureMethod(sf, batch_sizes = batch_sizes, regularization = regularizer))
-    push!(fits, fit(rfms[end], io_pairs_test, decomposition_type = "qr"))
+    push!(fits, fit(rfms[end], io_pairs_test))
 end
 
 if PLOT_FLAG
@@ -311,7 +311,8 @@ if PLOT_FLAG
     for (idx, rfm, fit, feature_type, clr) in zip(collect(1:length(σ_c)), rfms, fits, feature_types, clrs)
 
         pred_mean, pred_cov = predict(rfm, fit, DataContainer(xplt))
-        pred_cov = max.(pred_cov, 0.0)
+        pred_cov = pred_cov[1, 1, :] #just variances
+        pred_cov = max.(pred_cov, 0.0) #not normally needed..
         plot!(
             xplt',
             pred_mean',

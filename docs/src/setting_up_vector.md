@@ -115,20 +115,11 @@ The keyword `feature_parameters = Dict("sigma" => a)`, can be included to set th
 
 ## Method
 
-The `RandomFeatureMethod` sets up the training problem to learn coefficients ``\beta\in\mathbb{R}^m`` from input-output training data ``(x,y)=\{(x_i,y_i)\}_{i=1}^n``, ``y_i \in \mathbb{R}^p``  and parameters ``\theta = \{\theta_j\}_{j=1}^m``. Regularization is provided through ``\Lambda = \lambda \otimes I_{n\times n}`` from a user-provided `p-by-p` positive-definite regularization matrix ``\lambda``. In Einstein summation notation the method solves the following system
+The `RandomFeatureMethod` sets up the training problem to learn coefficients ``\beta\in\mathbb{R}^m`` from input-output training data ``(x,y)=\{(x_i,y_i)\}_{i=1}^n``, ``y_i \in \mathbb{R}^p``  and parameters ``\theta = \{\theta_j\}_{j=1}^m``. Regularization is provided through ``\Lambda``, a user-provided `p-by-p` positive-definite regularization matrix (or scaled identity). In Einstein summation notation the method solves the following system
 ```math
-(\frac{1}{m}\Phi_{n,i,p}(x;\theta) \Phi_{n,j,p}(x;\theta) + R_{i,j}) \beta_j = \Phi(x;\theta)_{n,i,p}y_{n,p}
+(\frac{1}{m}\Phi_{n,i,p}(x;\theta) \, [I_{n,m} \otimes \Lambda^{-1}_{p,q}]\, \Phi_{n,j,q}(x;\theta) + I_{i,j}) \beta_j = \Phi(x;\theta)_{n,i,p}\,[ I_{n,m} \otimes \Lambda^{-1}_{p,q}]\, y_{n,p}
 ```
-and where the regularization ``R`` is built from ``\Lambda`` by solving the non-square system
-```math
- \Phi_{m,j,q} R_{i,j} = \Phi_{n,i,p} \Lambda_{p,q,n,m}
-```
-In the case the ``\lambda`` is provided as a `Real` or `UniformScaling` then ``R`` is (consistently) replaced with ``\lambda I_{m\times m}``. The authors typically recommend replacing non-diagonal ``\lambda`` with ``\mathrm{det}(\lambda)^{\frac{1}{p}}I``, which often provides a reasonable approximation, as there is additional computational expense through solving this un-batched system of equations.
-
-!!! note "The nonsquare system"
-    If one chooses to solve for ``R``, note that it is also only defined for dimensions ``m < np``. For stability we also perform the following: we use a truncated SVD for when the rank of the system is less than ``m``, and we also symmetrize the resulting matrix.
-
-
+So long as ``\Lambda`` is easily invertible then this system is efficiently solved.       
 
 ```julia
 rfm = RandomFeatureMethod(
@@ -141,7 +132,8 @@ One can select batch sizes to balance the space-time (memory-process) trade-off.
 
 !!! warning "Conditioning"
     The problem is ill-conditioned without regularization.
-    If you encounters a Singular or Positive-definite exceptions, try increasing the constant scaling `regularization`
+    If you encounters a Singular or Positive-definite exceptions or warnings, try increasing the constant scaling `regularization`. 
+   
 
 
 

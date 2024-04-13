@@ -43,7 +43,7 @@ struct RandomFeatureMethod{S <: AbstractString, USorM <: Union{UniformScaling, A
     random_feature::RandomFeature
     "A dictionary specifying the batch sizes. Must contain \"train\", \"test\", and \"feature\" keys"
     batch_sizes::Dict{S, Int}
-    "A positive definite matrix used during the fit method to regularize the linear solve"
+    "A positive definite matrix used during the fit method to regularize the linear solve, interpreted as the inverse of the observational noise covariance"
     regularization::USorM
     "Use multithreading provided by Tullio"
     tullio_threading::Bool
@@ -59,30 +59,42 @@ function RandomFeatureMethod(
     regularization::USorMorR = 1e12 * eps() * I,
     batch_sizes::Dict{S, Int} = Dict("train" => 0, "test" => 0, "feature" => 0),
     tullio_threading = true,
+    regularization_inverted::Bool = false,
 ) where {S <: AbstractString, USorMorR <: Union{<:Real, AbstractMatrix{<:Real}, UniformScaling}}
 
     if !all([key ∈ keys(batch_sizes) for key in ["train", "test", "feature"]])
         throw(ArgumentError("batch_sizes keys must contain all of \"train\", \"test\", and \"feature\""))
     end
+
+    # ToDo store cholesky factors
     if isa(regularization, Real)
-        if regularization < 0
-            @info "input regularization < 0 is invalid, using regularization = 1e12*eps()"
-            lambda = 1e12 * eps() * I
+        if regularization <= 0
+            @info "input regularization <=0 is invalid, using regularization = 1e12*eps()"
+            λ = 1e12 * eps() * I
         else
-            lambda = regularization * I
+            λ = regularization * I
         end
     else
         if !isposdef(regularization) #check positive definiteness
             tol = 1e12 * eps() #MAGIC NUMBER
-            lambda = posdef_correct(regularization, tol = tol)
-            @warn "input regularization matrix is not positive definite, replacing with nearby positive definite matrix with minimum eigenvalue $tol"
+            λ = posdef_correct(regularization, tol = tol)
+            @warn "input regularization matrix is not positive definite, replacing with nearby positive definite matrix"
         else
-
-            lambda = regularization
+            λ = regularization
         end
     end
 
-    return RandomFeatureMethod{S, typeof(lambda)}(random_feature, batch_sizes, lambda, tullio_threading)
+    # we work with inverted regularization matrix
+    if regularization_inverted == false
+        if cond(regularization) > 10^8
+            @warn "The provided regularization is poorly conditioned: κ(reg) = cond(regularization). Imprecision or SingularException during inversion may occur."
+        end
+        λinv = inv(λ)
+    else
+        λinv = λ
+    end
+
+    return RandomFeatureMethod{S, typeof(λ)}(random_feature, batch_sizes, λinv, tullio_threading)
 end
 
 """
@@ -102,7 +114,7 @@ get_batch_sizes(rfm::RandomFeatureMethod) = rfm.batch_sizes
 """
 $(TYPEDSIGNATURES)
 
-gets the `regularization` field
+gets the `regularization` field, this is the inverse of the provided matrix if keyword `regularization_inverted = false`
 """
 get_regularization(rfm::RandomFeatureMethod) = rfm.regularization
 
@@ -137,11 +149,11 @@ Holds the coefficients and matrix decomposition that describe a set of fitted ra
 $(TYPEDFIELDS)
 """
 struct Fit{V <: AbstractVector, USorM <: Union{UniformScaling, AbstractMatrix}}
-    "The `LinearAlgreba` matrix decomposition of `(1 / m) * Feature^T * Feature + regularization`"
+    "The `LinearAlgreba` matrix decomposition of `(1 / m) * Feature^T * regularization^-1 * Feature + I`"
     feature_factors::Decomposition
     "Coefficients of the fit to data"
     coeffs::V
-    "feature-space regularization used during fit"
+    "output-dim regularization used during fit"
     regularization::USorM
 end
 
@@ -163,7 +175,7 @@ get_coeffs(f::Fit) = f.coeffs
 """
 $(TYPEDSIGNATURES)
 
-gets the `regularization` field (note this is the feature-space regularization)
+gets the `regularization` field (note this is the outputdim regularization)
 """
 get_regularization(f::Fit) = f.regularization
 
@@ -191,96 +203,48 @@ function fit(
     n_features = get_n_features(rf)
     #data are columns, batch over samples
 
-    lambda = get_regularization(rfm)
-    build_regularization = !isa(lambda, UniformScaling) # build if lambda is not a uniform scaling
-    if build_regularization
-        lambda_new = zeros(n_features, n_features)
-    else
-        lambda_new = lambda
-    end
+    λinv = get_regularization(rfm)
     Phi = build_features(rf, input)
     FT = eltype(Phi)
 
-    # regularization build needed with p.d matrix lambda
-    if build_regularization
-        if output_dim * n_data < n_features
-            lambda_new = exp(1.0 / output_dim * log(det(lambda))) * I #det(X)^{1/m}
-            @info(
-                "pos-def regularization formulation ill-defined for output_dim ($output_dim) * n_data ($n_data) < n_feature ($n_features). \n Treating it as if regularization was a uniform scaling size det(regularization_matrix)^{1 / output_dim}: $(lambda_new.λ)"
-            )
-        else
-
-            if !isa(lambda, Diagonal)
-                if !tullio_threading
-                    @tullio threads = 10^9 lambdaT_times_phi[n, p, i] := lambda[q, p] * Phi[n, q, i] # (I ⊗ Λᵀ) Φ
-                else
-                    @tullio lambdaT_times_phi[n, p, i] := lambda[q, p] * Phi[n, q, i] # (I ⊗ Λᵀ) Φ
-                end
-            else
-                lam_diag = [lambda[i, i] for i in 1:size(lambda, 1)]
-
-                if !tullio_threading
-                    @tullio threads = 10^9 lambdaT_times_phi[n, p, i] := lam_diag[p] * Phi[n, p, i] # (I ⊗ Λᵀ) Φ
-                else
-                    @tullio lambdaT_times_phi[n, p, i] := lam_diag[p] * Phi[n, p, i] # (I ⊗ Λᵀ) Φ                
-                end
-            end
-            #reshape to stacks columns, i.e n,p -> np does (n,...,n) p times
-            rhs = reshape(permutedims(lambdaT_times_phi, (2, 1, 3)), (n_data * output_dim, n_features))
-            lhs = reshape(permutedims(Phi, (2, 1, 3)), (n_data * output_dim, n_features))
-
-            # Solve Φ Bᵀ = (I ⊗ Λᵀ) Φ and transpose for B (=lambda_new)
-            lhs_svd = svd(lhs) #stable solve of rank deficient systems with SVD
-            th_idx = 1:sum(lhs_svd.S .> 1e-2 * maximum(lhs_svd.S))
-            lambda_new =
-                lhs_svd.V[:, th_idx] *
-                Diagonal(1 ./ lhs_svd.S[th_idx]) *
-                permutedims(lhs_svd.U[:, th_idx], (2, 1)) *
-                rhs
-            #make positive definite
-            lambda_new = posdef_correct(lambda_new)
-
-        end
-    end
-
-    PhiTY = zeros(n_features) #
-    PhiTPhi = zeros(n_features, n_features)
+    PhiTλinv = zeros(size(Phi))
+    PhiTλinvY = zeros(n_features)
+    PhiTλinvPhi = zeros(n_features, n_features)
     if !tullio_threading
-        @tullio threads = 10^9 PhiTY[j] = Phi[n, p, j] * output[p, n]
-        @tullio threads = 10^9 PhiTPhi[i, j] = Phi[n, p, i] * Phi[n, p, j] # BOTTLENECK
+        if isa(λinv, UniformScaling)
+            PhiTλinv = Phi * λinv.λ
+        else
+            @tullio threads = 10^9 PhiTλinv[n, q, i] = Phi[n, p, i] * λinv[p, q]
+        end
+        @tullio threads = 10^9 PhiTλinvY[j] = PhiTλinv[n, p, j] * output[p, n]
+        @tullio threads = 10^9 PhiTλinvPhi[i, j] = PhiTλinv[n, p, i] * Phi[n, p, j] # BOTTLENECK
     else
-        @tullio PhiTY[j] = Phi[n, p, j] * output[p, n]
-        @tullio PhiTPhi[i, j] = Phi[n, p, i] * Phi[n, p, j] # BOTTLENECK
+        if isa(λinv, UniformScaling)
+            PhiTλinv = Phi * λinv.λ
+        else
+            @tullio PhiTλinv[n, q, i] = Phi[n, p, i] * λinv[p, q]
+        end
+        @tullio PhiTλinvY[j] = PhiTλinv[n, p, j] * output[p, n]
+        @tullio PhiTλinvPhi[i, j] = PhiTλinv[n, p, i] * Phi[n, p, j] # BOTTLENECK
     end
     # alternative using svd - turns out to be slower and more mem intensive
 
-    @. PhiTPhi /= FT(n_features)
+    @. PhiTλinvPhi /= FT(n_features)
 
     # solve the linear system
-    # (PhiTPhi + lambda_new ) * beta = PhiTY
+    # (PhiTλinvPhi + I) * beta = PhiTλinvY
 
-    if lambda_new == 0 * I
-        feature_factors = Decomposition(PhiTPhi, "pinv")
-    else
-        # in-place add lambda (as we don't use PhiTPhi again after this)
-        if isa(lambda_new, UniformScaling)
-            # much quicker than just adding lambda_new...
-            for i in 1:size(PhiTPhi, 1)
-                PhiTPhi[i, i] += lambda_new.λ
-            end
-        else
-            @. PhiTPhi += lambda_new
-        end
-        feature_factors = Decomposition(PhiTPhi, decomposition_type)
-        # bottleneck for small problems only (much quicker than PhiTPhi for big problems)
-
+    # in-place add I (as we don't use PhiTPhi again after this)
+    for i in 1:size(PhiTλinvPhi, 1)
+        PhiTλinvPhi[i, i] += 1.0
     end
+    feature_factors = Decomposition(PhiTλinvPhi, decomposition_type)
+    # bottleneck for small problems only (much quicker than PhiTPhi for big problems)
 
-    coeffs = linear_solve(feature_factors, PhiTY, tullio_threading = tullio_threading) #n_features x n_samples x dim_output
+    coeffs = linear_solve(feature_factors, PhiTλinvY, tullio_threading = tullio_threading) #n_features x n_samples x dim_output
 
-    return Fit{typeof(coeffs), typeof(lambda_new)}(feature_factors, coeffs, lambda_new)
+    return Fit{typeof(coeffs), typeof(λinv)}(feature_factors, coeffs, λinv)
 end
-
 
 """
     $(TYPEDSIGNATURES)
@@ -571,12 +535,11 @@ function predictive_cov!(
     rf = get_random_feature(rfm)
     tullio_threading = get_tullio_threading(rfm)
     n_features = get_n_features(rf)
-    lambda = get_regularization(fit)
 
     output_dim = get_output_dim(rf)
     coeffs = get_coeffs(fit)
-    PhiTPhi_reg_factors = get_feature_factors(fit)
-    inv_decomp = get_inv_decomposition(PhiTPhi_reg_factors)
+    PhiTλinvPhi_factors = get_feature_factors(fit)
+    inv_decomp = get_inv_decomposition(PhiTλinvPhi_factors) # (get the inverse of this)
     if !(size(cov_store) == (output_dim, output_dim, size(inputs, 2)))
         throw(
             DimensionMismatch(
@@ -586,45 +549,25 @@ function predictive_cov!(
     end
 
     FT = eltype(prebuilt_features)
-    if isa(lambda, UniformScaling)
-        if !(size(buffer) == (size(inputs, 2), output_dim, n_features))
-            throw(
-                DimensionMismatch(
-                    "provided storage for tmp buffer expected to be size ($(size(inputs,2)),$(output_dim),$(n_features)), got $(size(buffer))",
-                ),
-            )
-        end
-        if !tullio_threading
-            @tullio threads = 10^9 buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o]
-            @tullio threads = 10^9 cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
-        else
-            @tullio buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o]
-            @tullio cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
-        end
-        @. cov_store /= (FT(n_features) / lambda.λ) #i.e. * lambda / n_features
 
-    else
-        PhiTPhi_reg = get_full_matrix(PhiTPhi_reg_factors)
-        @. PhiTPhi_reg -= lambda
-        if !tullio_threading
-            @tullio threads = 10^9 buffer[n, p, i] = PhiTPhi_reg[i, j] * prebuilt_features[n, p, j] # BOTTLENECK OF PREDICTION
-            coeff_outputs = linear_solve(PhiTPhi_reg_factors, buffer, tullio_threading = tullio_threading) # n_features x bsize x output_dim
-            # make sure we don't use := in following line, or it wont modify the input argument.
-            @tullio threads = 10^9 cov_store[p, q, n] =
-                prebuilt_features[n, p, m] * (prebuilt_features[n, q, m] - coeff_outputs[n, q, m])
-        else
-            @tullio buffer[n, p, i] = PhiTPhi_reg[i, j] * prebuilt_features[n, p, j] # BOTTLENECK OF PREDICTION
-            coeff_outputs = linear_solve(PhiTPhi_reg_factors, buffer) # n_features x bsize x output_dim
-            # make sure we don't use := in following line, or it wont modify the input argument.
-            @tullio cov_store[p, q, n] =
-                prebuilt_features[n, p, m] * (prebuilt_features[n, q, m] - coeff_outputs[n, q, m])
-        end
-        @. cov_store /= FT(n_features)
-
-        # IMPORTANT, we remove lambda in-place for calculation only, so must add it back
-        @. PhiTPhi_reg += lambda
-
+    # Bishop Nasrabadi 2006 - efficient computation of cov:   
+    if !(size(buffer) == (size(inputs, 2), output_dim, n_features))
+        throw(
+            DimensionMismatch(
+                "provided storage for tmp buffer expected to be size ($(size(inputs,2)),$(output_dim),$(n_features)), got $(size(buffer))",
+            ),
+        )
     end
+
+    if !tullio_threading
+        @tullio threads = 10^9 buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o] # = betahat(x')
+        @tullio threads = 10^9 cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
+    else
+        @tullio buffer[n, p, o] = prebuilt_features[n, p, m] * inv_decomp[m, o] # = betahat(x')
+        @tullio cov_store[p, q, n] = buffer[n, p, o] * prebuilt_features[n, q, o]
+    end
+    @. cov_store /= FT(n_features)
+
     nothing
 end
 
