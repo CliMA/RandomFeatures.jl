@@ -454,17 +454,6 @@ end
     initial_params = construct_initial_ensemble(priors, N_ens; rng_seed = ekp_seed)
     params_init = transform_unconstrained_to_constrained(priors, initial_params)#[1, :]
     println("Prior gives parameters between: [$(minimum(params_init)),$(maximum(params_init))]")
-
-    #=
-    min_complexity =
-        isa(lambda, UniformScaling) ? n_features_opt * log(lambda.λ) :
-        n_features_opt / output_dim * 2 * sum(log.(diag(cholesky(lambda).L)))
-    min_complexity = sqrt(abs(min_complexity))
-
-
-    data = vcat(reshape(y[:, (n_train + 1):end], :, 1), 0.0, min_complexity) #flatten data
-    println("min_complexity: ", min_complexity)
-    =#
     data = zeros(size(Γ, 1))
 
 
