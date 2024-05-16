@@ -85,7 +85,7 @@ function RandomFeatureMethod(
     end
 
     # we work with inverted regularization matrix
-    if regularization_inverted == false
+    if !(regularization_inverted)
         if cond(regularization) > 10^8
             @warn "The provided regularization is poorly conditioned: κ(reg) = cond(regularization). Imprecision or SingularException during inversion may occur."
         end
@@ -153,7 +153,7 @@ struct Fit{V <: AbstractVector, USorM <: Union{UniformScaling, AbstractMatrix}}
     feature_factors::Decomposition
     "Coefficients of the fit to data"
     coeffs::V
-    "output-dim regularization used during fit"
+    "output-dim x output_dim matrix 'regularization^{-1}' used during fit"
     regularization::USorM
 end
 
