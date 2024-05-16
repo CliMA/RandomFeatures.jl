@@ -181,7 +181,7 @@ end
 ## Begin Script, define problem setting
 println("Begin script")
 date_of_run = Date(2024, 4, 17)
-input_dim = 8
+input_dim = 6
 println("Number of input dimensions: ", input_dim)
 
 # not radial - different scale in each dimension

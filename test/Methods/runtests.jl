@@ -323,15 +323,15 @@ tol = 1e3 * eps()
         ytest_nonoise = ftest_nd_to_1d(get_data(xtest))
 
         # specify features
-        # note the σ_c and sigma values come from `examples/Learn_hyperparameters/nd_to_1d_regression_direct_matchingcov.jl`
+        # note the σ_c and sigma values come from `examples/Learn_hyperparameters/nd_to_1d_regression_direct_withcov.jl`
         μ_c = 0.0
         σ_c = [
-            0.4234088946781989,
-            0.8049531151024479,
-            2.0175064410998393,
-            1.943714718437188,
-            2.9903379860220314,
-            3.3332086723624266,
+            0.3825485503236213,
+            0.42867032225818974,
+            0.7680795575317269,
+            1.3357099339259075,
+            1.467811885297877,
+            1.9243009245568443,
         ]
         pd = ParameterDistribution(
             Dict(
