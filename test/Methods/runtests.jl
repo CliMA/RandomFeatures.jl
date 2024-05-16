@@ -302,12 +302,12 @@ tol = 1e3 * eps()
 
         rng = StableRNG(seed + 1)
         input_dim = 6
-        n_features = 3000
+        n_features = 1500
         ftest_nd_to_1d(x::AbstractMatrix) =
             mapslices(column -> exp(-0.1 * norm([i * c for (i, c) in enumerate(column)])^2), x, dims = 1)
 
         #problem formulation
-        n_data = 2000
+        n_data = 1000
         x = rand(rng, MvNormal(zeros(input_dim), I), n_data)
         noise_sd = 1e-6
         lambda = noise_sd^2
@@ -317,7 +317,7 @@ tol = 1e3 * eps()
         io_pairs = PairedDataContainer(x, y)
 
         n_test = 500
-        xtestvec = rand(rng, MvNormal(zeros(input_dim), I), n_test)
+        xtestvec = rand(rng, MvNormal(zeros(input_dim), 0.5*I), n_test) # hard to get rare data far from truth
 
         xtest = DataContainer(xtestvec)
         ytest_nonoise = ftest_nd_to_1d(get_data(xtest))
@@ -326,12 +326,12 @@ tol = 1e3 * eps()
         # note the σ_c and sigma values come from `examples/Learn_hyperparameters/nd_to_1d_regression_direct_withcov.jl`
         μ_c = 0.0
         σ_c = [
-            0.3825485503236213,
-            0.42867032225818974,
-            0.7680795575317269,
-            1.3357099339259075,
-            1.467811885297877,
-            1.9243009245568443,
+            1.6255817566051662,
+            0.9253857485562292,
+            1.4746432696544098,
+            0.957757192697812,
+            1.4575976906248895,
+            1.5142381915941976,
         ]
         pd = ParameterDistribution(
             Dict(

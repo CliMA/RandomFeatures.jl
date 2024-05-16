@@ -17,8 +17,8 @@ if PLOT_FLAG
     using Plots
 end
 using EnsembleKalmanProcesses
-const EKP = EnsembleKalmanProcesses
 using EnsembleKalmanProcesses.Localizers
+const EKP = EnsembleKalmanProcesses
 
 using RandomFeatures.ParameterDistributions
 using RandomFeatures.DataContainers
@@ -104,7 +104,6 @@ function calculate_mean_cov_and_coeffs(
     chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
     complexity = 2 * sum(log(chol_fac[i, i]) for i in 1:size(chol_fac, 1))
     complexity = sqrt(complexity)
-    
     return pred_mean, pred_cov, scaled_coeffs, complexity
 
 end
@@ -180,7 +179,7 @@ end
 
 ## Begin Script, define problem setting
 println("Begin script")
-date_of_run = Date(2024, 4, 17)
+date_of_run = Date(2024, 5, 16)
 input_dim = 6
 println("Number of input dimensions: ", input_dim)
 
@@ -248,17 +247,16 @@ println("Estimated covariance. Tr(cov) = ", tr(Γ[1:n_test, 1:n_test]), " + ", �
 #println("noise in observations: ", Γ)
 # Create EKI
 N_ens = 10 * input_dim
-N_iter = 10 # 30
+N_iter = 50 # 30
 update_cov_step = Inf
 
 initial_params = construct_initial_ensemble(rng, priors, N_ens)
 data = vcat(y[(n_train + 1):end], 0.0, 0.0)
 
-loc_method = SEC(0.02)
-ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion(), localization_method = loc_method)]
+ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion(), localization_method = SECNice(), scheduler = DataMisfitController(terminate_at = 1e4), verbose=true)]
 err = zeros(N_iter)
 println("Begin EKI iterations:")
-Δt = [1.0]
+
 
 for i in 1:N_iter
 
@@ -308,7 +306,7 @@ for i in 1:N_iter
 
     end
 
-    EKP.update_ensemble!(ekiobj[1], g_ens, Δt_new = Δt[1])
+    EKP.update_ensemble!(ekiobj[1], g_ens)
     err[i] = get_error(ekiobj[1])[end] #mean((params_true - mean(params_i,dims=2)).^2)
     constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
     println(
@@ -320,7 +318,6 @@ for i in 1:N_iter
         string(mean(constrained_u, dims = 2)),
         " and sd :" * string(sqrt.(var(constrained_u, dims = 2))),
     )
-    Δt[1] *= 1.0
 end
 
 #run actual experiment
