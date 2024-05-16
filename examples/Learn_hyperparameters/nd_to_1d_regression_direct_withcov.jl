@@ -206,7 +206,7 @@ priors = prior_lengthscale
 
 # estimate the noise from running many RFM sample costs at the mean values
 batch_sizes = Dict("train" => 600, "test" => 600, "feature" => 600)
-n_features = Int(floor(1.2 * n_data))
+n_features = Int(floor(0.5 * n_data))
 n_train = Int(floor(0.8 * n_data))
 n_test = n_data - n_train
 repeats = 1

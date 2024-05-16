@@ -333,7 +333,7 @@ end
 @time begin
     ## Begin Script, define problem setting
     println("Begin script")
-    date_of_run = Date(2024, 4, 10)
+    date_of_run = Date(2024, 5, 16)
 
     input_dim = 1
     output_dim = 3
@@ -443,7 +443,7 @@ end
     #println("noise in observations: ", Γ)
     # Create EKI
     N_ens = 10 * input_dim
-    N_iter = 20
+    N_iter = 5
     update_cov_step = Inf
 
     initial_params = construct_initial_ensemble(rng, priors, N_ens)
@@ -451,8 +451,7 @@ end
     println("Prior gives parameters between: [$(minimum(params_init)),$(maximum(params_init))]")
     data = zeros(size(Γ, 1))
 
-
-    ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data[:], Γ, Inversion())]
+    ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data[:], Γ, Inversion(), scheduler = DataMisfitController(terminate_at = 1e4), verbose=true)]
     err = zeros(N_iter)
     println("Begin EKI iterations:")
     Δt = [1.0]
