@@ -100,7 +100,7 @@ function calculate_mean_cov_and_coeffs(
     #we want to calc 1/var(y-mean)^2 + lambda/m * coeffs^2 in the end
     pred_mean, pred_cov = predict(rfm, fitted_features, DataContainer(itest))
     scaled_coeffs = sqrt(1 / n_features) * get_coeffs(fitted_features)
-    
+
     chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
     complexity = 2 * sum(log(chol_fac[i, i]) for i in 1:size(chol_fac, 1))
     complexity = sqrt(complexity)
@@ -240,10 +240,17 @@ else
 end
 
 Γ = internal_Γ
-Γ[1:n_test, 1:n_test] += regularizer*I
+Γ[1:n_test, 1:n_test] += regularizer * I
 Γ[(n_test + 1):end, (n_test + 1):end] += I
 
-println("Estimated covariance. Tr(cov) = ", tr(Γ[1:n_test, 1:n_test]), " + ", Γ[n_test + 1, n_test + 1], " + ", Γ[n_test + 2, n_test + 2])
+println(
+    "Estimated covariance. Tr(cov) = ",
+    tr(Γ[1:n_test, 1:n_test]),
+    " + ",
+    Γ[n_test + 1, n_test + 1],
+    " + ",
+    Γ[n_test + 2, n_test + 2],
+)
 #println("noise in observations: ", Γ)
 # Create EKI
 N_ens = 10 * input_dim
@@ -253,7 +260,17 @@ update_cov_step = Inf
 initial_params = construct_initial_ensemble(rng, priors, N_ens)
 data = vcat(y[(n_train + 1):end], 0.0, 0.0)
 
-ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion(), localization_method = SECNice(), scheduler = DataMisfitController(terminate_at = 1e4), verbose=true)]
+ekiobj = [
+    EKP.EnsembleKalmanProcess(
+        initial_params,
+        data,
+        Γ,
+        Inversion(),
+        localization_method = SECNice(),
+        scheduler = DataMisfitController(terminate_at = 1e4),
+        verbose = true,
+    ),
+]
 err = zeros(N_iter)
 println("Begin EKI iterations:")
 
@@ -287,7 +304,7 @@ for i in 1:N_iter
             repeats = repeats,
         )
         Γ_new = internal_Γ_new
-        Γ_new[1:n_test, 1:n_test] += regularizer*I
+        Γ_new[1:n_test, 1:n_test] += regularizer * I
         Γ_new[(n_test + 1):end, (n_test + 1):end] += I
         println(
             "Estimated covariance. Tr(cov) = ",

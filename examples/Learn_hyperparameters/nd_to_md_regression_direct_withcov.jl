@@ -429,7 +429,7 @@ end
     end
 
     Γ = internal_Γ
-    Γ[1:n_test*output_dim,1:n_test*output_dim] += kron(I(n_test),lambda)
+    Γ[1:(n_test * output_dim), 1:(n_test * output_dim)] += kron(I(n_test), lambda)
     Γ[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
     println(
         "Estimated variance. Tr(cov) = ",
@@ -451,7 +451,16 @@ end
     println("Prior gives parameters between: [$(minimum(params_init)),$(maximum(params_init))]")
     data = zeros(size(Γ, 1))
 
-    ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data[:], Γ, Inversion(), scheduler = DataMisfitController(terminate_at = 1e4), verbose=true)]
+    ekiobj = [
+        EKP.EnsembleKalmanProcess(
+            initial_params,
+            data[:],
+            Γ,
+            Inversion(),
+            scheduler = DataMisfitController(terminate_at = 1e4),
+            verbose = true,
+        ),
+    ]
     err = zeros(N_iter)
     println("Begin EKI iterations:")
     Δt = [1.0]
