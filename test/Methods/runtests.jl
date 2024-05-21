@@ -317,7 +317,7 @@ tol = 1e3 * eps()
         io_pairs = PairedDataContainer(x, y)
 
         n_test = 500
-        xtestvec = rand(rng, MvNormal(zeros(input_dim), 0.5*I), n_test) # hard to get rare data far from truth
+        xtestvec = rand(rng, MvNormal(zeros(input_dim), I), n_test) # hard to get rare data far from truth
 
         xtest = DataContainer(xtestvec)
         ytest_nonoise = ftest_nd_to_1d(get_data(xtest))
@@ -326,12 +326,12 @@ tol = 1e3 * eps()
         # note the σ_c and sigma values come from `examples/Learn_hyperparameters/nd_to_1d_regression_direct_withcov.jl`
         μ_c = 0.0
         σ_c = [
-            1.6255817566051662,
-            0.9253857485562292,
-            1.4746432696544098,
-            0.957757192697812,
-            1.4575976906248895,
-            1.5142381915941976,
+            0.7303238761547537,
+            0.9609037430404104,
+            1.281387598126217,
+            2.1248671068339577,
+            2.29258827903985,
+            2.4442948886686304,
         ]
         pd = ParameterDistribution(
             Dict(
