@@ -17,8 +17,8 @@ if PLOT_FLAG
     using Plots
 end
 using EnsembleKalmanProcesses
-const EKP = EnsembleKalmanProcesses
 using EnsembleKalmanProcesses.Localizers
+const EKP = EnsembleKalmanProcesses
 
 using RandomFeatures.ParameterDistributions
 using RandomFeatures.DataContainers
@@ -28,7 +28,6 @@ using RandomFeatures.Methods
 using RandomFeatures.Utilities
 
 seed = 2024
-ekp_seed = 99999
 rng = StableRNG(seed)
 
 ## Functions of use
@@ -101,7 +100,11 @@ function calculate_mean_cov_and_coeffs(
     #we want to calc 1/var(y-mean)^2 + lambda/m * coeffs^2 in the end
     pred_mean, pred_cov = predict(rfm, fitted_features, DataContainer(itest))
     scaled_coeffs = sqrt(1 / n_features) * get_coeffs(fitted_features)
-    return pred_mean, pred_cov, scaled_coeffs
+
+    chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
+    complexity = 2 * sum(log(chol_fac[i, i]) for i in 1:size(chol_fac, 1))
+    complexity = sqrt(complexity)
+    return pred_mean, pred_cov, scaled_coeffs, complexity
 
 end
 
@@ -121,16 +124,17 @@ function estimate_mean_cov_and_coeffnorm_covariance(
     means = zeros(n_test, n_samples)
     covs = zeros(n_test, n_samples)
     coeffl2norm = zeros(1, n_samples)
+    complexity = zeros(1, n_samples)
     for i in 1:n_samples
         for j in 1:repeats
-            m, v, c = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
+            m, v, c, cplxty = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
             means[:, i] += m[1, :] / repeats
             covs[:, i] += v[1, 1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
+            complexity[1, i] += cplxty / repeats
         end
     end
-    #    println("take covariances")
-    Γ = cov(vcat(means, coeffl2norm), dims = 2)
+    Γ = cov(vcat(means, coeffl2norm, complexity), dims = 2)
     approx_σ = Diagonal(mean(covs, dims = 2)[:, 1]) # approx of \sigma^2I +rf var
 
     return Γ, approx_σ
@@ -158,23 +162,25 @@ function calculate_ensemble_mean_cov_and_coeffnorm(
     means = zeros(n_test, N_ens)
     covs = zeros(n_test, N_ens)
     coeffl2norm = zeros(1, N_ens)
+    complexity = zeros(1, N_ens)
     for i in collect(1:N_ens)
         for j in collect(1:repeats)
             l = lmat[:, i]
-            m, v, c = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
+            m, v, c, cplxty = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
             means[:, i] += m[1, :] / repeats
             covs[:, i] += v[1, 1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
+            complexity[1, i] += cplxty / repeats
         end
     end
-    return vcat(means, coeffl2norm), Diagonal(mean(covs, dims = 2)[:, 1]) # approx of +\sigma^2I
+    return vcat(means, coeffl2norm, complexity), Diagonal(mean(covs, dims = 2)[:, 1]) # approx of +\sigma^2I
 
 end
 
 ## Begin Script, define problem setting
 println("Begin script")
-date_of_run = Date(2024, 4, 10)
-input_dim = 8
+date_of_run = Date(2024, 5, 16)
+input_dim = 6
 println("Number of input dimensions: ", input_dim)
 
 # not radial - different scale in each dimension
@@ -184,6 +190,7 @@ n_data = 100 * input_dim
 x = rand(rng, MvNormal(zeros(input_dim), 0.5 * I), n_data)
 noise_sd = 1e-3
 noise = rand(rng, Normal(0, noise_sd), (1, n_data))
+regularizer = noise_sd^2
 
 y = ftest_nd_to_1d(x) + noise
 io_pairs = PairedDataContainer(x, y)
@@ -199,7 +206,7 @@ priors = prior_lengthscale
 
 # estimate the noise from running many RFM sample costs at the mean values
 batch_sizes = Dict("train" => 600, "test" => 600, "feature" => 600)
-n_features = Int(floor(1.2 * n_data))
+n_features = Int(floor(0.5 * n_data))
 n_train = Int(floor(0.8 * n_data))
 n_test = n_data - n_train
 repeats = 1
@@ -233,24 +240,40 @@ else
 end
 
 Γ = internal_Γ
-Γ[1:n_test, 1:n_test] += approx_σ
+Γ[1:n_test, 1:n_test] += regularizer * I
 Γ[(n_test + 1):end, (n_test + 1):end] += I
 
-println("Estimated covariance. Tr(cov) = ", tr(Γ[1:n_test, 1:n_test]), " + ", tr(Γ[(n_test + 1):end, (n_test + 1):end]))
+println(
+    "Estimated covariance. Tr(cov) = ",
+    tr(Γ[1:n_test, 1:n_test]),
+    " + ",
+    Γ[n_test + 1, n_test + 1],
+    " + ",
+    Γ[n_test + 2, n_test + 2],
+)
 #println("noise in observations: ", Γ)
 # Create EKI
 N_ens = 10 * input_dim
-N_iter = 30
+N_iter = 50 # 30
 update_cov_step = Inf
 
-initial_params = construct_initial_ensemble(priors, N_ens; rng_seed = ekp_seed)
-data = vcat(y[(n_train + 1):end], 0.0)
+initial_params = construct_initial_ensemble(rng, priors, N_ens)
+data = vcat(y[(n_train + 1):end], 0.0, 0.0)
 
-loc_method = SEC(0.2)
-ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion(), localization_method = loc_method)]
+ekiobj = [
+    EKP.EnsembleKalmanProcess(
+        initial_params,
+        data,
+        Γ,
+        Inversion(),
+        localization_method = SECNice(),
+        scheduler = DataMisfitController(terminate_at = 1e4),
+        verbose = true,
+    ),
+]
 err = zeros(N_iter)
 println("Begin EKI iterations:")
-Δt = [1.0]
+
 
 for i in 1:N_iter
 
@@ -281,7 +304,7 @@ for i in 1:N_iter
             repeats = repeats,
         )
         Γ_new = internal_Γ_new
-        Γ_new[1:n_test, 1:n_test] += approx_σ_new
+        Γ_new[1:n_test, 1:n_test] += regularizer * I
         Γ_new[(n_test + 1):end, (n_test + 1):end] += I
         println(
             "Estimated covariance. Tr(cov) = ",
@@ -300,7 +323,7 @@ for i in 1:N_iter
 
     end
 
-    EKP.update_ensemble!(ekiobj[1], g_ens, Δt_new = Δt[1])
+    EKP.update_ensemble!(ekiobj[1], g_ens)
     err[i] = get_error(ekiobj[1])[end] #mean((params_true - mean(params_i,dims=2)).^2)
     constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
     println(
@@ -312,7 +335,6 @@ for i in 1:N_iter
         string(mean(constrained_u, dims = 2)),
         " and sd :" * string(sqrt.(var(constrained_u, dims = 2))),
     )
-    Δt[1] *= 1.0
 end
 
 #run actual experiment
@@ -338,7 +360,6 @@ if size(final_lvec, 1) == 1
 else
     σ_c = final_lvec[:, 1]
 end
-regularizer = noise_sd^2
 pd = ParameterDistribution(
     Dict(
         "distribution" => VectorOfParameterized(map(sd -> Normal(μ_c, sd), σ_c)),

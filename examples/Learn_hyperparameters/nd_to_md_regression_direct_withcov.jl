@@ -28,7 +28,6 @@ using RandomFeatures.Methods
 using RandomFeatures.Utilities
 
 seed = 2024
-ekp_seed = 99999
 rng = StableRNG(seed)
 
 function flat_to_chol(x::AbstractArray)
@@ -177,7 +176,6 @@ function calculate_mean_cov_and_coeffs(
     predict!(rfm, fitted_features, DataContainer(itest), mean_store, cov_store, buffer)
     # sizes (output_dim x n_test), (output_dim x output_dim x n_test) 
 
-
     scaled_coeffs = 1 / sqrt(n_features) * norm(get_coeffs(fitted_features))
 
     if decomp_type == "chol"
@@ -189,7 +187,6 @@ function calculate_mean_cov_and_coeffs(
     end
     complexity = sqrt(complexity) # complexity must be positive
 
-    println("sample_complexity", complexity)
     return scaled_coeffs, complexity
 
 end
@@ -336,7 +333,7 @@ end
 @time begin
     ## Begin Script, define problem setting
     println("Begin script")
-    date_of_run = Date(2024, 4, 10)
+    date_of_run = Date(2024, 5, 16)
 
     input_dim = 1
     output_dim = 3
@@ -432,9 +429,7 @@ end
     end
 
     Γ = internal_Γ
-    for i in 1:(n_test - 1)
-        Γ[((i - 1) * output_dim + 1):(i * output_dim), ((i - 1) * output_dim + 1):(i * output_dim)] += lambda[:, :]
-    end
+    Γ[1:(n_test * output_dim), 1:(n_test * output_dim)] += kron(I(n_test), lambda)
     Γ[(n_test * output_dim + 1):end, (n_test * output_dim + 1):end] += I
     println(
         "Estimated variance. Tr(cov) = ",
@@ -448,16 +443,24 @@ end
     #println("noise in observations: ", Γ)
     # Create EKI
     N_ens = 10 * input_dim
-    N_iter = 10
+    N_iter = 5
     update_cov_step = Inf
 
-    initial_params = construct_initial_ensemble(priors, N_ens; rng_seed = ekp_seed)
+    initial_params = construct_initial_ensemble(rng, priors, N_ens)
     params_init = transform_unconstrained_to_constrained(priors, initial_params)#[1, :]
     println("Prior gives parameters between: [$(minimum(params_init)),$(maximum(params_init))]")
     data = zeros(size(Γ, 1))
 
-
-    ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data[:], Γ, Inversion())]
+    ekiobj = [
+        EKP.EnsembleKalmanProcess(
+            initial_params,
+            data[:],
+            Γ,
+            Inversion(),
+            scheduler = DataMisfitController(terminate_at = 1e4),
+            verbose = true,
+        ),
+    ]
     err = zeros(N_iter)
     println("Begin EKI iterations:")
     Δt = [1.0]
