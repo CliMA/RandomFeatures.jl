@@ -218,7 +218,7 @@ for (idx, type) in enumerate(feature_types)
     # Create EKI
     N_ens = 50
     N_iter = 20
-    initial_params = construct_initial_ensemble(priors, N_ens; rng_seed = ekp_seed)
+    initial_params = construct_initial_ensemble(rng, priors, N_ens)
     data = vcat(y[(n_train + 1):end], 0.0)
     ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion())]
 
@@ -247,7 +247,10 @@ for (idx, type) in enumerate(feature_types)
         Γ_tmp[(n_test + 1):end, (n_test + 1):end] += I
 
         #        ekiobj[1] = EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion())
-        EKP.update_ensemble!(ekiobj[1], g_ens)
+        terminated = EKP.update_ensemble!(ekiobj[1], g_ens)
+        if !isnothing(terminated)
+            break
+        end
         err[i] = get_error(ekiobj[1])[end] #mean((params_true - mean(params_i,dims=2)).^2)
         println(
             "Iteration: " *

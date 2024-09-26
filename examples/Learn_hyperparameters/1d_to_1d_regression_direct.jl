@@ -213,7 +213,7 @@ for (idx, type) in enumerate(feature_types)
     # Create EKI
     N_ens = 50
     N_iter = 20
-    initial_params = construct_initial_ensemble(priors, N_ens; rng_seed = ekp_seed)
+    initial_params = construct_initial_ensemble(rng, priors, N_ens)
     data = vcat(y[(n_train + 1):end], 0.0)
     ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion())]
 
@@ -234,7 +234,11 @@ for (idx, type) in enumerate(feature_types)
             type,
             repeats = repeats,
         )
-        EKP.update_ensemble!(ekiobj[1], g_ens)
+        terminated = EKP.update_ensemble!(ekiobj[1], g_ens)
+        if !isnothing(terminated)
+            break
+        end
+
         err[i] = get_error(ekiobj[1])[end] #mean((params_true - mean(params_i,dims=2)).^2)
         println(
             "Iteration: " *
@@ -248,8 +252,10 @@ for (idx, type) in enumerate(feature_types)
         )
 
     end
+
     lengthscales[idx] = transform_unconstrained_to_constrained(priors, mean(get_u_final(ekiobj[1]), dims = 2))[1, 1]
 end
+
 
 println("****")
 println("Optimal lengthscales:  ", feature_types, " = ", lengthscales)

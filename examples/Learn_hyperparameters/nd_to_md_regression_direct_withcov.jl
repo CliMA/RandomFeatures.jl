@@ -510,7 +510,11 @@ end
         end
 
 
-        EKP.update_ensemble!(ekiobj[1], g_ens, Δt_new = Δt[1])
+        terminated = EKP.update_ensemble!(ekiobj[1], g_ens, Δt_new = Δt[1])
+        if !isnothing(terminated)
+            break
+        end
+
         err[i] = get_error(ekiobj[1])[end] #mean((params_true - mean(params_i,dims=2)).^2)
         constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
         println(
