@@ -238,7 +238,7 @@ for (idx, type) in enumerate(feature_types)
         if !isnothing(terminated)
             break
         end
-        
+
         err[i] = get_error(ekiobj[1])[end] #mean((params_true - mean(params_i,dims=2)).^2)
         println(
             "Iteration: " *
@@ -252,7 +252,7 @@ for (idx, type) in enumerate(feature_types)
         )
 
     end
-    
+
     lengthscales[idx] = transform_unconstrained_to_constrained(priors, mean(get_u_final(ekiobj[1]), dims = 2))[1, 1]
 end
 
