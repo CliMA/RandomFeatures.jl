@@ -75,7 +75,7 @@ function calculate_mean_and_coeffs(
     noise_sd::Real,
     n_features::Int,
     train_idx,
-    test_idx,        
+    test_idx,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer,
 )
@@ -116,7 +116,7 @@ function estimate_mean_and_coeffnorm_covariance(
     noise_sd::Real,
     n_features::Int,
     train_idx,
-    test_idx,        
+    test_idx,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer,
     n_samples::Int;
@@ -128,7 +128,8 @@ function estimate_mean_and_coeffnorm_covariance(
     complexity = zeros(1, n_samples)
     for i in 1:n_samples
         for j in 1:repeats
-            m, c, cplxty = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, train_idx, test_idx, batch_sizes, io_pairs)
+            m, c, cplxty =
+                calculate_mean_and_coeffs(rng, l, noise_sd, n_features, train_idx, test_idx, batch_sizes, io_pairs)
             means[:, i] += m[1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
             complexity[1, i] += cplxty / repeats
@@ -145,7 +146,7 @@ function calculate_ensemble_mean_and_coeffnorm(
     noise_sd::Real,
     n_features::Int,
     train_idx,
-    test_idx,   
+    test_idx,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer;
     repeats::Int = 1,
@@ -163,7 +164,8 @@ function calculate_ensemble_mean_and_coeffnorm(
     for i in collect(1:N_ens)
         for j in collect(1:repeats)
             l = lmat[:, i]
-            m, c, cplxty = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, train_idx, test_idx, batch_sizes, io_pairs)
+            m, c, cplxty =
+                calculate_mean_and_coeffs(rng, l, noise_sd, n_features, train_idx, test_idx, batch_sizes, io_pairs)
             means[:, i] += m[1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
             complexity[1, i] += cplxty / repeats
@@ -207,14 +209,18 @@ n_train = Int(floor(0.8 * n_data))
 n_test = n_data - n_train
 n_cross_val = 3
 @info "number of cross-validation sets: $(n_cross_val)"
-if n_test*n_cross_val > n_data
-    throw(ArgumentError("train/test split produces cross validation test sets of size $(n_test), out of $(n_data). set \"n_cross_val\" < $(Int(floor(n_data/n_test))). Received $n_cross_val"))
+if n_test * n_cross_val > n_data
+    throw(
+        ArgumentError(
+            "train/test split produces cross validation test sets of size $(n_test), out of $(n_data). set \"n_cross_val\" < $(Int(floor(n_data/n_test))). Received $n_cross_val",
+        ),
+    )
 end
 train_idx = []
 test_idx = []
 idx_shuffle = randperm(rng, n_data)
-for i = 1:n_cross_val
-    tmp = idx_shuffle[(i-1)*n_test+1:i*n_test]
+for i in 1:n_cross_val
+    tmp = idx_shuffle[((i - 1) * n_test + 1):(i * n_test)]
     push!(test_idx, tmp)
     push!(train_idx, setdiff(collect(1:n_data), tmp))
 end
@@ -229,7 +235,7 @@ if CALC_TRUTH
     n_samples = Int(floor(((1 + n_test) + 1) * sample_multiplier))
 
     observation_vec = []
-    for cv_idx = 1:n_cross_val
+    for cv_idx in 1:n_cross_val
         println("Estimating output covariance with ", n_samples, " samples")
         internal_Γ = estimate_mean_and_coeffnorm_covariance(
             rng,
@@ -249,14 +255,7 @@ if CALC_TRUTH
 
         data = vcat(get_outputs(io_pairs)[test_idx[cv_idx]], 0.0, 0.0)
 
-        push!(observation_vec, EKP.Observation(
-            Dict(
-                "names" => "$(cv_idx)",
-                "samples" => data[:],
-                "covariances" => Γ,
-            ),
-        ),
-              )
+        push!(observation_vec, EKP.Observation(Dict("names" => "$(cv_idx)", "samples" => data[:], "covariances" => Γ)))
     end
     observation = combine_observations(observation_vec)
 
@@ -292,8 +291,8 @@ for i in 1:N_iter
     #get parameters:
     lvec = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
 
-    g_ens = zeros(n_cross_val*(n_test+2),N_ens)
-    for cv_idx = 1:n_cross_val
+    g_ens = zeros(n_cross_val * (n_test + 2), N_ens)
+    for cv_idx in 1:n_cross_val
         g_ens_tmp = calculate_ensemble_mean_and_coeffnorm(
             rng,
             lvec,
@@ -304,43 +303,43 @@ for i in 1:N_iter
             batch_sizes,
             io_pairs,
         )
-        g_ens[(cv_idx-1)*(n_test+2) + 1: cv_idx*(n_test+2), :] = g_ens_tmp
+        g_ens[((cv_idx - 1) * (n_test + 2) + 1):(cv_idx * (n_test + 2)), :] = g_ens_tmp
     end
-          
-#=    
-    if i % update_cov_step == 0 # one update to the 
 
-        constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
-        println("Estimating output covariance with ", n_samples, " samples")
-        internal_Γ_new = estimate_mean_and_coeffnorm_covariance(
-            rng,
-            mean(constrained_u, dims = 2)[:, 1], # take mean values
-            noise_sd,
-            n_features,
-            batch_sizes,
-            io_pairs,
-            n_samples,
-        )
-        Γ_new = internal_Γ_new
-        Γ_new[1:n_test, 1:n_test] += regularizer * I
-        Γ_new[(n_test + 1):end, (n_test + 1):end] += I
-        println(
-            "Estimated covariance. Tr(cov) = ",
-            tr(Γ_new[1:n_test, 1:n_test]),
-            " + ",
-            tr(Γ_new[(n_test + 1):end, (n_test + 1):end]),
-        )
+    #=    
+        if i % update_cov_step == 0 # one update to the 
 
-        ekiobj[1] = EKP.EnsembleKalmanProcess(
-            get_u_final(ekiobj[1]),
-            data,
-            Γ_new,
-            Inversion(),
-            localization_method = loc_method,
-        )
+            constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
+            println("Estimating output covariance with ", n_samples, " samples")
+            internal_Γ_new = estimate_mean_and_coeffnorm_covariance(
+                rng,
+                mean(constrained_u, dims = 2)[:, 1], # take mean values
+                noise_sd,
+                n_features,
+                batch_sizes,
+                io_pairs,
+                n_samples,
+            )
+            Γ_new = internal_Γ_new
+            Γ_new[1:n_test, 1:n_test] += regularizer * I
+            Γ_new[(n_test + 1):end, (n_test + 1):end] += I
+            println(
+                "Estimated covariance. Tr(cov) = ",
+                tr(Γ_new[1:n_test, 1:n_test]),
+                " + ",
+                tr(Γ_new[(n_test + 1):end, (n_test + 1):end]),
+            )
 
-    end
-=#
+            ekiobj[1] = EKP.EnsembleKalmanProcess(
+                get_u_final(ekiobj[1]),
+                data,
+                Γ_new,
+                Inversion(),
+                localization_method = loc_method,
+            )
+
+        end
+    =#
     terminated = EKP.update_ensemble!(ekiobj[1], g_ens)
     if !isnothing(terminated)
         break

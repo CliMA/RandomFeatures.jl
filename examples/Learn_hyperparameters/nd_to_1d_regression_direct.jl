@@ -272,15 +272,8 @@ for i in 1:N_iter
 
     #get parameters:
     lvec = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
-    g_ens = calculate_ensemble_mean_and_coeffnorm(
-        rng,
-        lvec,
-        noise_sd,
-        n_features,
-        batch_sizes,
-        io_pairs,
-        repeats = repeats,
-    )
+    g_ens =
+        calculate_ensemble_mean_and_coeffnorm(rng, lvec, noise_sd, n_features, batch_sizes, io_pairs, repeats = repeats)
 
     if i % update_cov_step == 0 # one update to the 
 

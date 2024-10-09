@@ -220,7 +220,15 @@ for (idx, type) in enumerate(feature_types)
     N_iter = 20
     initial_params = construct_initial_ensemble(rng, priors, N_ens)
     data = vcat(y[(n_train + 1):end], 0.0)
-    ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion(), scheduler = EKP.DataMisfitController(terminate_at=100))]
+    ekiobj = [
+        EKP.EnsembleKalmanProcess(
+            initial_params,
+            data,
+            Γ,
+            Inversion(),
+            scheduler = EKP.DataMisfitController(terminate_at = 100),
+        ),
+    ]
 
 
     err = zeros(N_iter)

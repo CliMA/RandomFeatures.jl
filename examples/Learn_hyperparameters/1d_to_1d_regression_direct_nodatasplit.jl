@@ -115,7 +115,7 @@ function estimate_mean_and_coeffnorm_covariance(
             means[:, i] += m' / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
             complexity[1, i] += cplx / repeats
-            
+
         end
     end
 
@@ -218,7 +218,15 @@ for (idx, type) in enumerate(feature_types)
     N_iter = 20
     initial_params = construct_initial_ensemble(rng, priors, N_ens)
     data = vcat(y, 0.0, 0.0)
-    ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion(), scheduler=EKP.DataMisfitController(terminate_at=100))]
+    ekiobj = [
+        EKP.EnsembleKalmanProcess(
+            initial_params,
+            data,
+            Γ,
+            Inversion(),
+            scheduler = EKP.DataMisfitController(terminate_at = 100),
+        ),
+    ]
 
 
     err = zeros(N_iter)

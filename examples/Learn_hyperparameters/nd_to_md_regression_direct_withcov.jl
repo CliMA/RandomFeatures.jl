@@ -159,10 +159,10 @@ function calculate_mean_cov_and_coeffs(
         io_train_cost = PairedDataContainer(itrain, otrain)
         itest = get_inputs(io_pairs)[:, (n_train + 1):end]
         otest = get_outputs(io_pairs)[:, (n_train + 1):end]
-        
+
     else
-        
-        n_train = Int(size(get_inputs(io_pairs),2))
+
+        n_train = Int(size(get_inputs(io_pairs), 2))
         n_test = n_train
         # split data into train/test randomly
         itrain = get_inputs(io_pairs)[:, 1:n_train]
@@ -226,7 +226,7 @@ function estimate_mean_and_coeffnorm_covariance(
         n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
         n_test = size(get_inputs(io_pairs), 2) - n_train
     else
-        n_train = Int( size(get_inputs(io_pairs), 2))
+        n_train = Int(size(get_inputs(io_pairs), 2))
         n_test = n_train
     end
     output_dim = size(get_outputs(io_pairs), 1)
@@ -310,7 +310,7 @@ function calculate_ensemble_mean_and_coeffnorm(
         n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
         n_test = size(get_inputs(io_pairs), 2) - n_train
     else
-        n_train = Int( size(get_inputs(io_pairs), 2))
+        n_train = Int(size(get_inputs(io_pairs), 2))
         n_test = n_train
     end
 
