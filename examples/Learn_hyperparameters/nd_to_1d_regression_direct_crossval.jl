@@ -1,5 +1,5 @@
-# Example to learn hyperparameters of simple 1d-1d regression example.
-# This example matches test/Methods/runtests.jl testset: "Fit and predict: 1D -> 1D"
+# Example to learn hyperparameters of simple nd-1d regression example.
+# This example matches test/Methods/runtests.jl testset: "Fit and predict: ND -> 1D"
 # The (approximate) optimal values here are used in those tests.
 
 
@@ -69,26 +69,27 @@ function RFM_from_hyperparameters(
 end
 
 
-function calculate_mean_cov_and_coeffs(
+function calculate_mean_and_coeffs(
     rng::AbstractRNG,
     l::Union{Real, AbstractVecOrMat},
     noise_sd::Real,
     n_features::Int,
+    train_idx,
+    test_idx,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer,
 )
 
     regularizer = noise_sd^2
-    n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
-    n_test = size(get_inputs(io_pairs), 2) - n_train
 
-    # split data into train/test randomly
-    itrain = get_inputs(io_pairs)[:, 1:n_train]
-    otrain = get_outputs(io_pairs)[:, 1:n_train]
+    itrain = get_inputs(io_pairs)[:, train_idx]
+    otrain = get_outputs(io_pairs)[:, train_idx]
     io_train_cost = PairedDataContainer(itrain, otrain)
-    itest = get_inputs(io_pairs)[:, (n_train + 1):end]
-    otest = get_outputs(io_pairs)[:, (n_train + 1):end]
+    itest = get_inputs(io_pairs)[:, test_idx]
+    otest = get_outputs(io_pairs)[:, test_idx]
     input_dim = size(itrain, 1)
+    output_dim = size(otrain, 1)
+    n_test = size(itest, 2)
 
     # build and fit the RF
     rfm = RFM_from_hyperparameters(rng, l, regularizer, n_features, batch_sizes, input_dim)
@@ -98,54 +99,54 @@ function calculate_mean_cov_and_coeffs(
     batch_inputs = batch_generator(itest, test_batch_size, dims = 2) # input_dim x batch_size
 
     #we want to calc 1/var(y-mean)^2 + lambda/m * coeffs^2 in the end
-    pred_mean, pred_cov = predict(rfm, fitted_features, DataContainer(itest))
+    pred_mean, features = predictive_mean(rfm, fitted_features, DataContainer(itest))
     scaled_coeffs = sqrt(1 / n_features) * get_coeffs(fitted_features)
 
     chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
     complexity = 2 * sum(log(chol_fac[i, i]) for i in 1:size(chol_fac, 1))
     complexity = sqrt(complexity)
-    return pred_mean, pred_cov, scaled_coeffs, complexity
+    return pred_mean, scaled_coeffs, complexity
 
 end
 
 
-function estimate_mean_cov_and_coeffnorm_covariance(
+function estimate_mean_and_coeffnorm_covariance(
     rng::AbstractRNG,
     l::Union{Real, AbstractVecOrMat},
     noise_sd::Real,
     n_features::Int,
+    train_idx,
+    test_idx,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer,
     n_samples::Int;
     repeats::Int = 1,
 )
-    n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
-    n_test = size(get_inputs(io_pairs), 2) - n_train
+    n_test = length(test_idx)
     means = zeros(n_test, n_samples)
-    covs = zeros(n_test, n_samples)
     coeffl2norm = zeros(1, n_samples)
     complexity = zeros(1, n_samples)
     for i in 1:n_samples
         for j in 1:repeats
-            m, v, c, cplxty = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
+            m, c, cplxty =
+                calculate_mean_and_coeffs(rng, l, noise_sd, n_features, train_idx, test_idx, batch_sizes, io_pairs)
             means[:, i] += m[1, :] / repeats
-            covs[:, i] += v[1, 1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
             complexity[1, i] += cplxty / repeats
         end
     end
     Γ = cov(vcat(means, coeffl2norm, complexity), dims = 2)
-    approx_σ = Diagonal(mean(covs, dims = 2)[:, 1]) # approx of \sigma^2I +rf var
-
-    return Γ, approx_σ
+    return Γ
 
 end
 
-function calculate_ensemble_mean_cov_and_coeffnorm(
+function calculate_ensemble_mean_and_coeffnorm(
     rng::AbstractRNG,
     lvecormat::AbstractVecOrMat,
     noise_sd::Real,
     n_features::Int,
+    train_idx,
+    test_idx,
     batch_sizes::Dict,
     io_pairs::PairedDataContainer;
     repeats::Int = 1,
@@ -156,30 +157,27 @@ function calculate_ensemble_mean_cov_and_coeffnorm(
         lmat = lvecormat
     end
     N_ens = size(lmat, 2)
-    n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
-    n_test = size(get_inputs(io_pairs), 2) - n_train
-
+    n_test = length(test_idx)
     means = zeros(n_test, N_ens)
-    covs = zeros(n_test, N_ens)
     coeffl2norm = zeros(1, N_ens)
     complexity = zeros(1, N_ens)
     for i in collect(1:N_ens)
         for j in collect(1:repeats)
             l = lmat[:, i]
-            m, v, c, cplxty = calculate_mean_cov_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs)
+            m, c, cplxty =
+                calculate_mean_and_coeffs(rng, l, noise_sd, n_features, train_idx, test_idx, batch_sizes, io_pairs)
             means[:, i] += m[1, :] / repeats
-            covs[:, i] += v[1, 1, :] / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
             complexity[1, i] += cplxty / repeats
         end
     end
-    return vcat(means, coeffl2norm, complexity), Diagonal(mean(covs, dims = 2)[:, 1]) # approx of +\sigma^2I
+    return vcat(means, coeffl2norm, complexity)
 
 end
 
 ## Begin Script, define problem setting
 println("Begin script")
-date_of_run = Date(2024, 5, 16)
+date_of_run = Date(2024, 10, 4)
 input_dim = 6
 println("Number of input dimensions: ", input_dim)
 
@@ -209,7 +207,24 @@ batch_sizes = Dict("train" => 600, "test" => 600, "feature" => 600)
 n_features = Int(floor(0.5 * n_data))
 n_train = Int(floor(0.8 * n_data))
 n_test = n_data - n_train
-repeats = 1
+n_cross_val = 3
+@info "number of cross-validation sets: $(n_cross_val)"
+if n_test * n_cross_val > n_data
+    throw(
+        ArgumentError(
+            "train/test split produces cross validation test sets of size $(n_test), out of $(n_data). set \"n_cross_val\" < $(Int(floor(n_data/n_test))). Received $n_cross_val",
+        ),
+    )
+end
+train_idx = []
+test_idx = []
+idx_shuffle = randperm(rng, n_data)
+for i in 1:n_cross_val
+    tmp = idx_shuffle[((i - 1) * n_test + 1):(i * n_test)]
+    push!(test_idx, tmp)
+    push!(train_idx, setdiff(collect(1:n_data), tmp))
+end
+
 
 CALC_TRUTH = true
 
@@ -217,54 +232,50 @@ println("RHKS norm type: norm of coefficients")
 
 if CALC_TRUTH
     sample_multiplier = 1
-
     n_samples = Int(floor(((1 + n_test) + 1) * sample_multiplier))
-    println("Estimating output covariance with ", n_samples, " samples")
-    internal_Γ, approx_σ = estimate_mean_cov_and_coeffnorm_covariance(
-        rng,
-        μ_l, # take mean values
-        noise_sd,
-        n_features,
-        batch_sizes,
-        io_pairs,
-        n_samples,
-        repeats = repeats,
-    )
 
+    observation_vec = []
+    for cv_idx in 1:n_cross_val
+        println("Estimating output covariance with ", n_samples, " samples")
+        internal_Γ = estimate_mean_and_coeffnorm_covariance(
+            rng,
+            μ_l, # take mean values
+            noise_sd,
+            n_features,
+            train_idx[cv_idx],
+            test_idx[cv_idx],
+            batch_sizes,
+            io_pairs,
+            n_samples,
+        )
 
-    save("calculated_truth_cov.jld2", "internal_Γ", internal_Γ, "approx_σ", approx_σ)
+        Γ = internal_Γ
+        Γ[1:n_test, 1:n_test] += regularizer * I
+        Γ[(n_test + 1):end, (n_test + 1):end] += I
+
+        data = vcat(get_outputs(io_pairs)[test_idx[cv_idx]], 0.0, 0.0)
+
+        push!(observation_vec, EKP.Observation(Dict("names" => "$(cv_idx)", "samples" => data[:], "covariances" => Γ)))
+    end
+    observation = combine_observations(observation_vec)
+
+    save("calculated_truth_cov.jld2", "observation", observation)
 else
     println("Loading truth covariance from file...")
-    internal_Γ = load("calculated_truth_cov.jld2")["internal_Γ"]
-    approx_σ = load("calculated_truth_cov.jld2")["approx_σ"]
+    internal_Γ = load("calculated_truth_cov.jld2")["observation"]
 end
 
-Γ = internal_Γ
-Γ[1:n_test, 1:n_test] += regularizer * I
-Γ[(n_test + 1):end, (n_test + 1):end] += I
-
-println(
-    "Estimated covariance. Tr(cov) = ",
-    tr(Γ[1:n_test, 1:n_test]),
-    " + ",
-    Γ[n_test + 1, n_test + 1],
-    " + ",
-    Γ[n_test + 2, n_test + 2],
-)
-#println("noise in observations: ", Γ)
 # Create EKI
 N_ens = 10 * input_dim
-N_iter = 50 # 30
+N_iter = 20 # 30
 update_cov_step = Inf
 
 initial_params = construct_initial_ensemble(rng, priors, N_ens)
-data = vcat(y[(n_train + 1):end], 0.0, 0.0)
 
 ekiobj = [
     EKP.EnsembleKalmanProcess(
         initial_params,
-        data,
-        Γ,
+        observation,
         Inversion(),
         localization_method = SECNice(),
         scheduler = DataMisfitController(terminate_at = 1e4),
@@ -279,50 +290,56 @@ for i in 1:N_iter
 
     #get parameters:
     lvec = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
-    g_ens, approx_σ_ens = calculate_ensemble_mean_cov_and_coeffnorm(
-        rng,
-        lvec,
-        noise_sd,
-        n_features,
-        batch_sizes,
-        io_pairs,
-        repeats = repeats,
-    )
 
-    if i % update_cov_step == 0 # one update to the 
-
-        constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
-        println("Estimating output covariance with ", n_samples, " samples")
-        internal_Γ_new, approx_σ_new = estimate_mean_cov_and_coeffnorm_covariance(
+    g_ens = zeros(n_cross_val * (n_test + 2), N_ens)
+    for cv_idx in 1:n_cross_val
+        g_ens_tmp = calculate_ensemble_mean_and_coeffnorm(
             rng,
-            mean(constrained_u, dims = 2)[:, 1], # take mean values
+            lvec,
             noise_sd,
             n_features,
+            train_idx[cv_idx],
+            test_idx[cv_idx],
             batch_sizes,
             io_pairs,
-            n_samples,
-            repeats = repeats,
         )
-        Γ_new = internal_Γ_new
-        Γ_new[1:n_test, 1:n_test] += regularizer * I
-        Γ_new[(n_test + 1):end, (n_test + 1):end] += I
-        println(
-            "Estimated covariance. Tr(cov) = ",
-            tr(Γ_new[1:n_test, 1:n_test]),
-            " + ",
-            tr(Γ_new[(n_test + 1):end, (n_test + 1):end]),
-        )
-
-        ekiobj[1] = EKP.EnsembleKalmanProcess(
-            get_u_final(ekiobj[1]),
-            data,
-            Γ_new,
-            Inversion(),
-            localization_method = loc_method,
-        )
-
+        g_ens[((cv_idx - 1) * (n_test + 2) + 1):(cv_idx * (n_test + 2)), :] = g_ens_tmp
     end
 
+    #=    
+        if i % update_cov_step == 0 # one update to the 
+
+            constrained_u = transform_unconstrained_to_constrained(priors, get_u_final(ekiobj[1]))
+            println("Estimating output covariance with ", n_samples, " samples")
+            internal_Γ_new = estimate_mean_and_coeffnorm_covariance(
+                rng,
+                mean(constrained_u, dims = 2)[:, 1], # take mean values
+                noise_sd,
+                n_features,
+                batch_sizes,
+                io_pairs,
+                n_samples,
+            )
+            Γ_new = internal_Γ_new
+            Γ_new[1:n_test, 1:n_test] += regularizer * I
+            Γ_new[(n_test + 1):end, (n_test + 1):end] += I
+            println(
+                "Estimated covariance. Tr(cov) = ",
+                tr(Γ_new[1:n_test, 1:n_test]),
+                " + ",
+                tr(Γ_new[(n_test + 1):end, (n_test + 1):end]),
+            )
+
+            ekiobj[1] = EKP.EnsembleKalmanProcess(
+                get_u_final(ekiobj[1]),
+                data,
+                Γ_new,
+                Inversion(),
+                localization_method = loc_method,
+            )
+
+        end
+    =#
     terminated = EKP.update_ensemble!(ekiobj[1], g_ens)
     if !isnothing(terminated)
         break
@@ -416,14 +433,14 @@ if PLOT_FLAG
             plt,
             joinpath(
                 figure_save_directory,
-                "Fit_and_predict_ND_" * string(direction) * "of" * string(input_dim) * ".pdf",
+                "Fit_and_predict_ND_crossval$(n_cross_val)_" * string(direction) * "of" * string(input_dim) * ".pdf",
             ),
         )
         savefig(
             plt,
             joinpath(
                 figure_save_directory,
-                "Fit_and_predict_ND_" * string(direction) * "of" * string(input_dim) * ".png",
+                "Fit_and_predict_ND_crossval$(n_cross_val)_" * string(direction) * "of" * string(input_dim) * ".png",
             ),
         )
     end

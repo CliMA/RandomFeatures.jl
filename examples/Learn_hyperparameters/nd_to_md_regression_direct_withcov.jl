@@ -149,18 +149,31 @@ function calculate_mean_cov_and_coeffs(
     L <: Union{AbstractMatrix, UniformScaling, Real},
 }
 
-    n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
-    n_test = size(get_inputs(io_pairs), 2) - n_train
+    data_split = true
+    if data_split
+        n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
+        n_test = size(get_inputs(io_pairs), 2) - n_train
+        # split data into train/test randomly
+        itrain = get_inputs(io_pairs)[:, 1:n_train]
+        otrain = get_outputs(io_pairs)[:, 1:n_train]
+        io_train_cost = PairedDataContainer(itrain, otrain)
+        itest = get_inputs(io_pairs)[:, (n_train + 1):end]
+        otest = get_outputs(io_pairs)[:, (n_train + 1):end]
 
-    # split data into train/test randomly
-    itrain = get_inputs(io_pairs)[:, 1:n_train]
-    otrain = get_outputs(io_pairs)[:, 1:n_train]
-    io_train_cost = PairedDataContainer(itrain, otrain)
-    itest = get_inputs(io_pairs)[:, (n_train + 1):end]
-    otest = get_outputs(io_pairs)[:, (n_train + 1):end]
+    else
+
+        n_train = Int(size(get_inputs(io_pairs), 2))
+        n_test = n_train
+        # split data into train/test randomly
+        itrain = get_inputs(io_pairs)[:, 1:n_train]
+        otrain = get_outputs(io_pairs)[:, 1:n_train]
+        io_train_cost = PairedDataContainer(itrain, otrain)
+        itest = itrain
+        otest = otrain
+    end
+
     input_dim = size(itrain, 1)
     output_dim = size(otrain, 1)
-
     # build and fit the RF
     rfm = RFM_from_hyperparameters(rng, l, lambda, n_features, batch_sizes, input_dim, output_dim)
     if decomp_type == "chol"
@@ -208,8 +221,14 @@ function estimate_mean_and_coeffnorm_covariance(
     RorM <: Union{Real, AbstractVecOrMat},
     L <: Union{AbstractMatrix, UniformScaling, Real},
 }
-    n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
-    n_test = size(get_inputs(io_pairs), 2) - n_train
+    data_split = true
+    if data_split
+        n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
+        n_test = size(get_inputs(io_pairs), 2) - n_train
+    else
+        n_train = Int(size(get_inputs(io_pairs), 2))
+        n_test = n_train
+    end
     output_dim = size(get_outputs(io_pairs), 1)
 
     means = zeros(output_dim, n_samples, n_test)
@@ -286,8 +305,15 @@ function calculate_ensemble_mean_and_coeffnorm(
         lmat = lvecormat
     end
     N_ens = size(lmat, 2)
-    n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
-    n_test = size(get_inputs(io_pairs), 2) - n_train
+    data_split = true
+    if data_split
+        n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
+        n_test = size(get_inputs(io_pairs), 2) - n_train
+    else
+        n_train = Int(size(get_inputs(io_pairs), 2))
+        n_test = n_train
+    end
+
     output_dim = size(get_outputs(io_pairs), 1)
 
     means = zeros(output_dim, N_ens, n_test)
