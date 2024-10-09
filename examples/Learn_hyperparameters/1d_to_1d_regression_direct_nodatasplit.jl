@@ -68,25 +68,22 @@ function calculate_mean_and_coeffs(
     feature_type::String,
 )
     regularizer = noise_sd^2
-    n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
-    n_test = size(get_inputs(io_pairs), 2) - n_train
+    n_data = size(get_inputs(io_pairs), 2)
 
     # split data into train/test randomly
-    itrain = reshape(get_inputs(io_pairs)[1, 1:n_train], 1, :)
-    otrain = reshape(get_outputs(io_pairs)[1, 1:n_train], 1, :)
+    itrain = reshape(get_inputs(io_pairs), 1, :)
+    otrain = reshape(get_outputs(io_pairs), 1, :)
     io_train_cost = PairedDataContainer(itrain, otrain)
-    itest = reshape(get_inputs(io_pairs)[1, (n_train + 1):end], 1, :)
-    otest = reshape(get_outputs(io_pairs)[1, (n_train + 1):end], 1, :)
 
     # build and fit the RF
     rfm = RFM_from_hyperparameters(rng, l, regularizer, n_features, batch_sizes, feature_type)
     fitted_features = fit(rfm, io_train_cost)
 
     test_batch_size = get_batch_size(rfm, "test")
-    batch_inputs = batch_generator(itest, test_batch_size, dims = 2) # input_dim x batch_size
+    batch_inputs = batch_generator(itrain, test_batch_size, dims = 2) # input_dim x batch_size
 
     #we want to calc lambda/m * coeffs^2 in the end
-    pred_mean, features = predictive_mean(rfm, fitted_features, DataContainer(itest))
+    pred_mean, features = predictive_mean(rfm, fitted_features, DataContainer(itrain))
     scaled_coeffs = sqrt(1 / n_features) * get_coeffs(fitted_features)
     chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
     complexity = 2 * sum(log(chol_fac[i, i]) for i in 1:size(chol_fac, 1))
@@ -106,9 +103,9 @@ function estimate_mean_and_coeffnorm_covariance(
     n_samples::Int;
     repeats::Int = 1,
 )
-    n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
-    n_test = size(get_inputs(io_pairs), 2) - n_train
-    means = zeros(n_test, n_samples)
+    n_data = size(get_inputs(io_pairs), 2)
+
+    means = zeros(n_data, n_samples)
     coeffl2norm = zeros(1, n_samples)
     complexity = zeros(1, n_samples)
 
@@ -138,10 +135,9 @@ function calculate_ensemble_mean_and_coeffnorm(
     repeats::Int = 1,
 )
     N_ens = length(lvec)
-    n_train = Int(floor(0.8 * size(get_inputs(io_pairs), 2))) # 80:20 train test
-    n_test = size(get_inputs(io_pairs), 2) - n_train
+    n_data = size(get_inputs(io_pairs), 2)
 
-    means = zeros(n_test, N_ens)
+    means = zeros(n_data, N_ens)
     coeffl2norm = zeros(1, N_ens)
     complexity = zeros(1, N_ens)
     for (i, l) in zip(collect(1:N_ens), lvec)
@@ -191,9 +187,7 @@ priors = prior_lengthscale
 
 # estimate the noise from running many RFM sample costs at the mean values
 batch_sizes = Dict("train" => 100, "test" => 100, "feature" => 100)
-n_train = Int(floor(0.8 * n_data))
-n_test = n_data - n_train
-n_samples = n_test + 1 # >  n_test
+n_samples = n_data + 1 # >  n_data
 n_features = 300
 repeats = 1
 
@@ -214,8 +208,8 @@ for (idx, type) in enumerate(feature_types)
         repeats = repeats,
     )
     Γ = internal_Γ
-    Γ[1:n_test, 1:n_test] += noise_sd^2 * I
-    Γ[(n_test + 1):end, (n_test + 1):end] += I
+    Γ[1:n_data, 1:n_data] += noise_sd^2 * I
+    Γ[(n_data + 1):end, (n_data + 1):end] += I
 
 
     println("Finished estimation.")
@@ -223,8 +217,8 @@ for (idx, type) in enumerate(feature_types)
     N_ens = 50
     N_iter = 20
     initial_params = construct_initial_ensemble(rng, priors, N_ens)
-    data = vcat(y[(n_train + 1):end], 0.0, 0.0)
-    ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion(), scheduler=DataMisfitController(terminate_at=1000))]
+    data = vcat(y, 0.0, 0.0)
+    ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion(), scheduler=EKP.DataMisfitController(terminate_at=100))]
 
 
     err = zeros(N_iter)
@@ -337,6 +331,6 @@ if PLOT_FLAG
         )
 
     end
-    savefig(plt, joinpath(figure_save_directory, "Fit_and_predict_1D.pdf"))
+    savefig(plt, joinpath(figure_save_directory, "Fit_and_predict_1D_no-data-split.pdf"))
 
 end
