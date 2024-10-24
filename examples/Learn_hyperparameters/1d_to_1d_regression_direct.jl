@@ -88,7 +88,10 @@ function calculate_mean_and_coeffs(
     #we want to calc lambda/m * coeffs^2 in the end
     pred_mean, features = predictive_mean(rfm, fitted_features, DataContainer(itest))
     scaled_coeffs = sqrt(1 / n_features) * get_coeffs(fitted_features)
-    return pred_mean, scaled_coeffs
+    chol_fac = get_decomposition(get_feature_factors(fitted_features)).L
+    complexity = 2 * sum(log(chol_fac[i, i]) for i in 1:size(chol_fac, 1))
+    complexity = sqrt(complexity)
+    return pred_mean, scaled_coeffs, complexity
 
 end
 
@@ -107,15 +110,19 @@ function estimate_mean_and_coeffnorm_covariance(
     n_test = size(get_inputs(io_pairs), 2) - n_train
     means = zeros(n_test, n_samples)
     coeffl2norm = zeros(1, n_samples)
+    complexity = zeros(1, n_samples)
+
     for i in 1:n_samples
         for j in 1:repeats
-            m, c = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
+            m, c, cplx = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
             means[:, i] += m' / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
+            complexity[1, i] += cplx / repeats
+
         end
     end
 
-    Γ = cov(vcat(means, coeffl2norm), dims = 2)
+    Γ = cov(vcat(means, coeffl2norm, complexity), dims = 2)
     return Γ
 
 end
@@ -136,14 +143,16 @@ function calculate_ensemble_mean_and_coeffnorm(
 
     means = zeros(n_test, N_ens)
     coeffl2norm = zeros(1, N_ens)
+    complexity = zeros(1, N_ens)
     for (i, l) in zip(collect(1:N_ens), lvec)
         for j in collect(1:repeats)
-            m, c = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
+            m, c, cplx = calculate_mean_and_coeffs(rng, l, noise_sd, n_features, batch_sizes, io_pairs, feature_type)
             means[:, i] += m' / repeats
             coeffl2norm[1, i] += sqrt(sum(c .^ 2)) / repeats
+            complexity[1, i] += cplx / repeats
         end
     end
-    return vcat(means, coeffl2norm)
+    return vcat(means, coeffl2norm, complexity)
 
 end
 
@@ -185,7 +194,7 @@ batch_sizes = Dict("train" => 100, "test" => 100, "feature" => 100)
 n_train = Int(floor(0.8 * n_data))
 n_test = n_data - n_train
 n_samples = n_test + 1 # >  n_test
-n_features = 80
+n_features = 300
 repeats = 1
 
 
@@ -214,8 +223,16 @@ for (idx, type) in enumerate(feature_types)
     N_ens = 50
     N_iter = 20
     initial_params = construct_initial_ensemble(rng, priors, N_ens)
-    data = vcat(y[(n_train + 1):end], 0.0)
-    ekiobj = [EKP.EnsembleKalmanProcess(initial_params, data, Γ, Inversion())]
+    data = vcat(y[(n_train + 1):end], 0.0, 0.0)
+    ekiobj = [
+        EKP.EnsembleKalmanProcess(
+            initial_params,
+            data,
+            Γ,
+            Inversion(),
+            scheduler = DataMisfitController(terminate_at = 1000),
+        ),
+    ]
 
 
     err = zeros(N_iter)

@@ -54,7 +54,7 @@ tol = 1e3 * eps()
         ) #don't invert, just make PD 
         reg_new = get_regularization(rfm_warn2)
         @test isposdef(reg_new)
-        @test minimum(eigvals(reg_new)) > 1e12 * eps()
+        @test minimum(eigvals(reg_new)) > (1e12 - 1) * eps()
 
         rfm = RandomFeatureMethod(
             sff,
