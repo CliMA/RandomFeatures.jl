@@ -18,10 +18,10 @@ RandomFeatures is a Julia implementation of random features for high-dimensional
 [docs-latest-img]: https://img.shields.io/badge/docs-latest-blue.svg
 [docs-latest-url]: https://CliMA.github.io/RandomFeatures.jl/dev/
 
-[docs-bld-img]: https://github.com/CliMA/RandomFeatures.jl/actions/workflows/Docs.yml/badge.svg?branch=main
+[docs-bld-img]: https://github.com/CliMA/RandomFeatures.jl/actions/workflows/Docs.yml/badge.svg
 [docs-bld-url]: https://github.com/CliMA/RandomFeatures.jl/actions/workflows/Docs.yml
 
-[unit-tests-img]: https://github.com/CliMA/RandomFeatures.jl/actions/workflows/Tests.yml/badge.svg?branch=main
+[unit-tests-img]: https://github.com/CliMA/RandomFeatures.jl/actions/workflows/Tests.yml/badge.svg
 [unit-tests-url]: https://github.com/CliMA/RandomFeatures.jl/actions/workflows/Tests.yml
 
 [codecov-img]: https://codecov.io/gh/CliMA/RandomFeatures.jl/branch/main/graph/badge.svg
