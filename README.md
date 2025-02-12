@@ -9,6 +9,7 @@ RandomFeatures is a Julia implementation of random features for high-dimensional
 | **Docs Build**       | [![docs build][docs-bld-img]][docs-bld-url]      |
 | **Unit tests**       | [![unit tests][unit-tests-img]][unit-tests-url]  |
 | **Code Coverage**    | [![codecov][codecov-img]][codecov-url]           |
+| **Downloads**        | [![Downloads][dlt-img]][dlt-url]                 |
 
 
 [zenodo-img]: https://zenodo.org/badge/523830850.svg
@@ -25,6 +26,12 @@ RandomFeatures is a Julia implementation of random features for high-dimensional
 
 [codecov-img]: https://codecov.io/gh/CliMA/RandomFeatures.jl/branch/main/graph/badge.svg
 [codecov-url]: https://codecov.io/gh/CliMA/RandomFeatures.jl
+
+[dlm-img]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FRandomFeatures&query=total_requests&suffix=%2Fmonth&label=Downloads
+[dlm-url]: https://juliapkgstats.com/pkg/RandomFeatures.c
+
+[dlt-img]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FRandomFeatures&query=total_requests&label=Downloads
+[dlt-url]: https://juliapkgstats.com/pkg/RandomFeatures.c
 
 ### Requirements
 Julia version 1.6+ 
