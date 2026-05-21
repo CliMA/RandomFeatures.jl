@@ -102,6 +102,9 @@ grep -nrE 'Base\.(show|summary)' src/
 Skip any type that already has a custom `Base.show` or `Base.summary` method — do not
 overwrite existing customization.
 
+Also skip **zero-field structs** — their default show (`Cosine()`, `Relu()`) is already
+compact and informative; there is nothing to improve.
+
 ### Step 3 — Write show and summary methods
 
 For each noisy type without existing methods, write **both** a `Base.show` and a
@@ -173,6 +176,21 @@ default to `src/show.jl` if no prior convention exists.
 If creating `src/show.jl`, add `include("show.jl")` to the main module file after the
 type definitions it references.
 
+**Multi-submodule packages**: When each `.jl` file opens its own `module` (e.g.
+`module Utilities ... end`), the types live in separate namespaces. In this case,
+include `show.jl` from the *parent* module file **after all submodule includes**, and
+reference types by their submodule-qualified name:
+
+```julia
+# In show.jl, included from module RandomFeatures after all submodule includes:
+function Base.show(io::IO, ::MIME"text/plain", x::Utilities.Decomposition) ...
+function Base.show(io::IO, x::Features.ScalarFeature) ...
+```
+
+Inside show methods placed at the parent-module level, **prefer direct field access**
+(`x.n_features`) over calling submodule accessors (`Features.get_n_features(x)`) —
+the accessor may not be in scope, and field access is just as clear.
+
 ### Step 4 — Write unit tests
 
 Write one test block per type, covering `show` (full and compact), and `summary`. Each
@@ -187,6 +205,34 @@ test block must:
   assert `out2 == out3` — both compact paths must agree.
 - For `summary`: capture output with `sprint(summary, instance)` and assert that it
   contains the type name and produces exactly one line (no `'\n'` in output).
+
+**Test runner registration**: If the package has a top-level `test/runtests.jl` that
+iterates over a list of submodule test directories, add `"show"` to that list so the
+new tests run as part of `Pkg.test()`.
+
+**DRY helpers for multiple types**: When testing more than two types, extract the
+repeating assertions into helpers to avoid noisy repetition:
+
+```julia
+function check_full(x, typename)
+    out = sprint(show, MIME("text/plain"), x)
+    @test occursin(typename, out)
+    @test count(==('\n'), out) <= 10
+end
+function check_compact(x, typename)
+    out2 = sprint(show, x)
+    @test occursin(typename, out2) && !occursin('\n', out2)
+    @test out2 == sprint(show, MIME("text/plain"), x; context = :compact => true)
+end
+function check_summary(x, typename)
+    out = sprint(summary, x)
+    @test occursin(typename, out) && !occursin('\n', out)
+end
+```
+
+Then each type's test block becomes three lines: `check_full(x, "T")`,
+`check_compact(x, "T")`, `check_summary(x, "T")`. Add any type-specific assertions
+(e.g., that the feature count appears in the compact hint) after the helpers.
 
 **Bespoke 2-arg shows (retrofit case):** Some types may already have a 2-arg show
 that intentionally does not include the type name or follow summary style — the method
