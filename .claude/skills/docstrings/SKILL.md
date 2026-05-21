@@ -11,9 +11,10 @@ description: >
   or asks to document a type or function, sync the API pages, or keep the API
   index up to date. Also use it when the user asks to "write docs for" or "add
   docs to" source files, or when a CI failure mentions missing or incomplete
-  docstrings. In RandomFeatures.jl, priority targets are: scalar function types
-  (Cosine, Relu, Gelu, etc. have minimal docstrings), get_output_dim (missing),
-  and any function whose docstring is a bare $(TYPEDSIGNATURES) with no prose.
+  docstrings. In RandomFeatures.jl, the 2026-05-20 audit resolved all bare stubs;
+  common failure modes to watch for are inaccurate return-type claims, getter prose
+  copy-pasted across dispatches, and jldoctests using `using PackageName` for symbols
+  that live only in a submodule and need `using PackageName.SubModule`.
 ---
 
 # docstrings
@@ -77,6 +78,24 @@ the definition. Produce a prioritised list:
 4. **Incomplete** — prose present but key sections absent (missing `# Arguments`,
    `# Examples`, or field strings not describing semantic role).
 
+**Accuracy checks on existing prose.** Alongside the coverage gaps above, run two
+quick passes so correctness bugs in *existing* docstrings don't survive the edit cycle:
+
+- **Return-type claims.** For any function whose existing docstring prose contains
+  "Returns a " or "Returns an ", read the actual `return` statement(s) in the source
+  and verify the claimed shape matches. A common failure mode is a one-liner wrapper
+  whose docstring says "Returns an `output_dim × n_samples` array" but the
+  implementation returns a `(array, features)` tuple. Flag these as category 4
+  (Incomplete) and correct the prose in Step 3.
+
+- **Getter semantic claims.** For getter functions (names beginning with `get_`)
+  that assert a specific value or type in prose — e.g. "equals 1", "returns a Bool",
+  "always positive" — verify the claim against the actual implementation body for
+  *every* dispatch of that getter name. Copy-paste errors across overloads are common:
+  a `get_output_dim` defined on a vector type may have inherited prose that says
+  "equals 1 for scalar-valued features". Flag these as category 4 and correct the
+  prose so each overload's docstring only makes claims that hold for its own dispatch.
+
 **Also scan every function in the file for old-style docstrings**, regardless of
 whether it is exported. An old-style docstring is one that uses an indented
 function-name header (e.g. `    my_func(arg1, arg2)`) and/or an `Args:` /
@@ -108,6 +127,14 @@ convert it to the new format:
   list, remove the manual list.
 - Preserve any genuine prose that was in the old `# Constructor` section if it
   explains non-obvious behaviour; discard boilerplate signature repetition.
+- After adding `$(METHODLIST)`, check whether any exported factory function
+  builds this struct under a different name (e.g. `fit` for `Fit`,
+  `FeatureSampler` for `Sampler`). If so, insert a prose note naming that
+  factory in the `# Constructors` section, immediately before `$(METHODLIST)`,
+  following the **Named constructors** pattern below. Do *not* bury the factory
+  reference only in the opening prose — putting it inside `# Constructors` is
+  what makes it discoverable to readers scanning for "how do I build one of
+  these?".
 
 #### Named constructors (factory functions)
 
@@ -178,6 +205,20 @@ one — and leave the rest undocumented.
 
 Internal framework methods that are exported for extensibility but not called
 directly by end users do not need documentation even if exported.
+
+**Overloads with different return types are separate concepts.** The one-docstring
+rule is for type-parameter specialisations that do the same thing for different
+argument types. It does *not* apply when two overloads of the same name return
+fundamentally different shapes — e.g. a 3-argument form that returns a
+`(result, features)` tuple while a 4-argument form returns only `result`. These
+are distinct contracts and both deserve a docstring, each with a clear description
+of what it returns.
+
+Exception: if both variants are only ever called through a single, higher-level
+public function (e.g. `predict` wraps both `predictive_mean` and `predictive_cov`
+internally), leave the implementation variants undocumented and document only the
+public entry point. The test is whether a user would ever plausibly call the variant
+directly; if not, it does not need a docstring.
 
 #### Old-style function docstrings (all functions, not just exported)
 
@@ -370,6 +411,12 @@ expect. Apply them consistently.
   other dispatch methods remain undocumented. Do **not** add `$(METHODLIST)` to
   function docstrings — `$(TYPEDSIGNATURES)` already surfaces all overloads.
   `$(METHODLIST)` belongs only in struct docstrings (inside `# Constructors`).
+  **Exception — convenience overloads with distinct kwargs**: If a secondary overload
+  introduces keyword arguments or a shorthand interface not visible in the primary
+  overload's signature (e.g. an `output_dim::Int` convenience argument or a
+  `uniform_shift_bounds` keyword), do not silently delete that information. Instead,
+  remove the secondary overload's docstring and fold a brief `# Convenience overloads`
+  note into the primary docstring, naming the extra kwargs and when to prefer them.
 - **`# Arguments` section**: add after the opening prose for any function with
   more than two parameters, or where argument semantics are non-obvious. Format:
   `` - `name`: description [unit] ``.
@@ -380,9 +427,14 @@ expect. Apply them consistently.
   a blank line. Documenter.jl rejects blocks where two prompts appear
   consecutively without an intervening blank line. If a statement produces no
   output, end it with a semicolon and add a blank line before the next prompt.
-- If the doctest references any name from the package, the first statement must
-  be `julia> using RandomFeatures` (followed by a blank line). Do not assume the
-  package is already in scope.
+- **jldoctest import line**: Before writing any `# Examples` block, verify that
+  the symbol is actually accessible via `using PackageName` at the top level. Read
+  the main module file (`src/PackageName.jl`) and check whether the symbol appears
+  in a top-level `export` statement or is brought in via `using .SubModule`. If
+  neither is true, the symbol lives only in the submodule — use the full path as
+  the import line: `julia> using PackageName.SubModule`. Using the wrong import
+  causes a silent doctest failure (`UndefVarError`) even though the symbol is
+  genuinely public. Do not assume the package is already in scope.
 
 ## Quality criteria
 
@@ -422,23 +474,23 @@ struct Fit{V <: AbstractVector, USorM <: Union{UniformScaling, AbstractMatrix}}
     ...
 end
 
-## After — NEW format: prose only, $(TYPEDEF) for signature, $(METHODLIST) for constructors
+## After — NEW format: $(TYPEDEF), prose, $(TYPEDFIELDS), and factory method in # Constructors
+## (factory `fit` has a different name from the struct, so $(METHODLIST) adds nothing;
+##  the # Constructors section is pure prose naming the factory instead)
 
 """
-Hold the coefficients and matrix decomposition that describe a set of fitted random features.
-
-Instances are produced by `fit(rfm, inputs, outputs)` and passed to `predict` and
-`predictive_mean` / `predictive_cov` to generate predictions at new input locations.
-
 $(TYPEDEF)
 
-# Fields
+Holds the coefficients and matrix decomposition produced by `fit`, describing a trained random
+feature regression model. Pass to `predict`, `predictive_mean`, or `predictive_cov` to obtain
+predictions at new input locations.
 
 $(TYPEDFIELDS)
 
 # Constructors
 
-$(METHODLIST)
+Produced by `fit(rfm, input_output_pairs; decomposition_type = "cholesky")` — not intended to
+be constructed directly.
 """
 struct Fit{V <: AbstractVector, USorM <: Union{UniformScaling, AbstractMatrix}}
     ...

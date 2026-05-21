@@ -4,9 +4,14 @@ export build_features
 """
 $(TYPEDEF)
 
-Contains information to build and sample RandomFeatures mapping from N-D -> 1-D
+Random feature model that maps N-dimensional inputs to 1-dimensional scalar outputs.
 
 $(TYPEDFIELDS)
+
+# Constructors
+
+- `ScalarFourierFeature(n_features, sampler; feature_parameters)` — cosine (Fourier) features.
+- `ScalarNeuronFeature(n_features, sampler; activation_fun = Relu())` — activation-function features.
 """
 struct ScalarFeature{S <: AbstractString, SF <: ScalarFunction} <: RandomFeature
     "Number of features"
@@ -25,7 +30,11 @@ end
 """
 $(TYPEDSIGNATURES)
 
-basic constructor for a `ScalarFeature'
+Construct a `ScalarFeature` with `n_features` random features sampled from `feature_sampler`,
+applying `scalar_fun` to compute feature values.
+
+The `feature_sampler` parameter distribution must contain a named component `"xi"`.
+`feature_parameters` must include the key `"sigma"` (output scale; default `1`).
 """
 function ScalarFeature(
     n_features::Int,
@@ -56,7 +65,10 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Constructor for a `ScalarFeature` with cosine features
+Construct a `ScalarFeature` with cosine (Fourier) features.
+
+The `sigma` feature parameter (default `sqrt(2)`) scales the output; use larger values for
+wider kernel approximations.
 """
 function ScalarFourierFeature(
     n_features::Int,
@@ -69,7 +81,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Constructor for a `ScalarFeature` with activation-function features (default ReLU)
+Construct a `ScalarFeature` with a neural-network activation function (default `Relu`).
+
+Pass any `ScalarActivation` subtype as `activation_fun` to use a different activation.
 """
 function ScalarNeuronFeature(
     n_features::Int,
@@ -83,7 +97,10 @@ end
 """
 $(TYPEDSIGNATURES)
 
-builds features (possibly batched) from an input matrix of size (input dimension, number of samples) output of dimension (number of samples, 1, number features) 
+Build random features from an `input_dim × n_samples` input matrix, evaluating only the feature
+indices in `batch_feature_idx`.
+
+Returns an `n_samples × 1 × length(batch_feature_idx)` array.
 """
 function build_features(
     rf::ScalarFeature,

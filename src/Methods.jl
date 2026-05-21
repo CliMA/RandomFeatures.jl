@@ -34,9 +34,15 @@ export RandomFeatureMethod,
 """
 $(TYPEDEF)
 
-Holds configuration for the random feature fit
+Holds the configuration for a random feature regression model, including the feature object,
+batch sizes for training and prediction, and the regularisation matrix.
 
 $(TYPEDFIELDS)
+
+# Constructors
+
+`RandomFeatureMethod(random_feature; regularization, batch_sizes, tullio_threading, regularization_inverted)` —
+see the constructor docstring for defaults and validation behaviour.
 """
 struct RandomFeatureMethod{S <: AbstractString, USorM <: Union{UniformScaling, AbstractMatrix}}
     "The random feature object"
@@ -144,9 +150,16 @@ get_batch_size(rfm::RandomFeatureMethod, key::S) where {S <: AbstractString} = g
 """
 $(TYPEDEF)
 
-Holds the coefficients and matrix decomposition that describe a set of fitted random features.
+Holds the coefficients and matrix decomposition produced by `fit`, describing a trained random
+feature regression model. Pass to `predict`, `predictive_mean`, or `predictive_cov` to obtain
+predictions at new input locations.
 
 $(TYPEDFIELDS)
+
+# Constructors
+
+Produced by `fit(rfm, input_output_pairs; decomposition_type = "cholesky")` — not intended to
+be constructed directly.
 """
 struct Fit{V <: AbstractVector, USorM <: Union{UniformScaling, AbstractMatrix}}
     "The `LinearAlgreba` matrix decomposition of `(1 / m) * Feature^T * regularization^-1 * Feature + I`"
@@ -247,9 +260,12 @@ function fit(
 end
 
 """
-    $(TYPEDSIGNATURES)
-        
-    Makes a prediction of mean and (co)variance of fitted features on new input data
+$(TYPEDSIGNATURES)
+
+Return the predictive mean and (co)variance of the fitted random feature model evaluated at `new_inputs`.
+
+Returns a `(mean, cov)` tuple where `mean` is an `output_dim × n_samples` array and `cov` is
+an `output_dim × output_dim × n_samples` array.
 """
 function predict(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer; kwargs...)
     pred_mean, features = predictive_mean(rfm, fit, new_inputs; kwargs...)
@@ -358,8 +374,11 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Makes a prediction of mean of fitted features on new input data.
-Returns a `output_dim` x `n_samples` array.
+Return the predictive mean of the fitted random feature model evaluated at `new_inputs`.
+
+Returns a tuple `(mean, features)` where `mean` is an `output_dim × n_samples` array and
+`features` is the `n_samples × output_dim × n_features` feature matrix, which can be passed
+directly to `predictive_cov` to avoid rebuilding features.
 """
 predictive_mean(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataContainer; kwargs...) =
     predictive_mean(rfm, get_coeffs(fit), new_inputs; kwargs...)
@@ -474,10 +493,12 @@ function predictive_mean!(
 end
 
 """
-    $(TYPEDSIGNATURES)
-    
-    Makes a prediction of (co)variance of fitted features on new input data.
-Returns a `output_dim` x `output_dim` x `n_samples` array
+$(TYPEDSIGNATURES)
+
+Return the predictive covariance of the fitted random feature model evaluated at `new_inputs`,
+using `prebuilt_features` to avoid rebuilding the feature matrix.
+
+Returns an `output_dim × output_dim × n_samples` array.
 """
 function predictive_cov(
     rfm::RandomFeatureMethod,
@@ -509,10 +530,15 @@ function predictive_cov(rfm::RandomFeatureMethod, fit::Fit, new_inputs::DataCont
 end
 
 """
-    $(TYPEDSIGNATURES)
-    
-    Makes a prediction of (co)variance of fitted features on new input data.
-Writes into a provided `output_dim` x `output_dim` x `n_samples` array: `cov_store`, and uses provided `n_samples` x `output_dim` x `n_features` buffer.
+$(TYPEDSIGNATURES)
+
+Compute the predictive covariance of the fitted random feature model at `new_inputs`, writing into
+pre-allocated arrays and using `prebuilt_features` to avoid rebuilding the feature matrix.
+
+# Arguments
+- `cov_store`: pre-allocated `output_dim × output_dim × n_samples` array for the covariance output.
+- `buffer`: pre-allocated `n_samples × output_dim × n_features` working array.
+- `prebuilt_features`: `n_samples × output_dim × n_features` feature matrix.
 """
 function predictive_cov!(
     rfm::RandomFeatureMethod,

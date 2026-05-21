@@ -4,9 +4,14 @@ export build_features
 """
 $(TYPEDEF)
 
-Contains information to build and sample RandomFeatures mapping from N-D -> M-D
+Random feature model that maps N-dimensional inputs to M-dimensional vector outputs.
 
 $(TYPEDFIELDS)
+
+# Constructors
+
+- `VectorFourierFeature(n_features, output_dim, sampler; feature_parameters)` — cosine (Fourier) features.
+- `VectorNeuronFeature(n_features, output_dim, sampler; activation_fun = Relu())` — activation-function features.
 """
 struct VectorFeature{S <: AbstractString, SF <: ScalarFunction} <: RandomFeature
     "Number of features"
@@ -27,7 +32,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-gets the output dimension (equals 1 for scalar-valued features)
+Return the output dimension of `rf`.
 """
 get_output_dim(rf::VectorFeature) = rf.output_dim
 
@@ -36,7 +41,11 @@ get_output_dim(rf::VectorFeature) = rf.output_dim
 """
 $(TYPEDSIGNATURES)
 
-basic constructor for a `VectorFeature'
+Construct a `VectorFeature` with `n_features` random features, `output_dim`-dimensional outputs,
+sampled from `feature_sampler`, applying `scalar_fun` to compute feature values.
+
+The `feature_sampler` parameter distribution must contain a named component `"xi"`.
+`feature_parameters` must include the key `"sigma"` (output scale; default `1`).
 """
 function VectorFeature(
     n_features::Int,
@@ -69,7 +78,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Constructor for a `VectorFeature` with cosine features
+Construct a `VectorFeature` with cosine (Fourier) features mapping to `output_dim`-dimensional outputs.
+
+The `sigma` feature parameter (default `sqrt(2)`) scales the output.
 """
 function VectorFourierFeature(
     n_features::Int,
@@ -83,7 +94,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Constructor for a `VectorFeature` with activation-function features (default ReLU)
+Construct a `VectorFeature` with a neural-network activation function (default `Relu`) mapping to `output_dim`-dimensional outputs.
+
+Pass any `ScalarActivation` subtype as `activation_fun` to use a different activation.
 """
 function VectorNeuronFeature(
     n_features::Int,
@@ -98,7 +111,10 @@ end
 """
 $(TYPEDSIGNATURES)
 
-builds features (possibly batched) from an input matrix of size (input dimension,number of samples) output of dimension (number of samples, output dimension, number features) 
+Build random features from an `input_dim × n_samples` input matrix, evaluating only the feature
+indices in `batch_feature_idx`.
+
+Returns an `n_samples × output_dim × length(batch_feature_idx)` array.
 """
 function build_features(
     rf::VectorFeature,
