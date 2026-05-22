@@ -17,6 +17,7 @@ StoredInvType
 Factor
 PseInv
 get_decomposition
+get_inv_decomposition
 get_full_matrix
 get_parametric_type
 linear_solve

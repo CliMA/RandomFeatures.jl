@@ -41,9 +41,23 @@ end
 # Decomposition/linear solves for feature matrices
 
 """
-    posdef_correct(mat::AbstractMatrix; tol::Real=1e8*eps())
+$(TYPEDSIGNATURES)
 
-Makes square matrix `mat` positive definite, by symmetrizing and bounding the minimum eigenvalue below by `tol`
+Make a square matrix positive definite by symmetrising it and bounding the minimum eigenvalue below by `tol`.
+
+# Arguments
+- `mat`: the square matrix to correct.
+- `tol`: minimum eigenvalue tolerance; eigenvalues smaller than `tol` are shifted up [dimensionless]; default `1e12 * eps()`.
+
+# Examples
+```jldoctest
+julia> using LinearAlgebra, RandomFeatures.Utilities
+
+julia> M = [1.0 2.0; 2.0 1.0];
+
+julia> isposdef(posdef_correct(M))
+true
+```
 """
 function posdef_correct(mat::AbstractMatrix; tol::Real = 1e12 * eps())
     mat = deepcopy(mat)
@@ -75,21 +89,30 @@ abstract type StoredInvType end
 
 """
 $(TYPEDEF)
+
+Factorisation-based stored inverse type (SVD or Cholesky).
 """
 abstract type Factor <: StoredInvType end
 
 """
 $(TYPEDEF)
+
+Pseudoinverse-based stored inverse type.
 """
 abstract type PseInv <: StoredInvType end
 
 """
 $(TYPEDEF)
 
-Stores a matrix along with a decomposition `T=Factor`, or pseudoinverse `T=PseInv`, and also computes the inverse of the Factored matrix (for several predictions this is actually the most computationally efficient action)
-
+Stores a matrix along with a decomposition `T=Factor`, or pseudoinverse `T=PseInv`, and also
+computes the inverse of the factored matrix for efficient repeated linear solves.
 
 $(TYPEDFIELDS)
+
+# Constructors
+
+`Decomposition(mat, method; nugget = 1e12 * eps())` where `method` is one of `"svd"`,
+`"cholesky"`, or `"pinv"`.
 """
 struct Decomposition{T, M <: AbstractMatrix, MorF <: Union{AbstractMatrix, Factorization}}
     "The original matrix"
@@ -124,12 +147,7 @@ function Decomposition(
         return Decomposition{Factor, typeof(mat), Base.return_types(cholesky, (typeof(mat),))[1]}(mat, fmat, inv(fmat))
 
     else
-        throw(
-            ArgumentError(
-                "Only factorization methods \"pinv\", \"cholesky\" and \"svd\" implemented. got " * string(method),
-            ),
-        )
-
+        _throw_bad_decomp_method(method)
     end
 end
 """
@@ -212,5 +230,19 @@ end
 
 linear_solve(d::Decomposition, rhs::A; tullio_threading = true) where {A <: AbstractArray} =
     linear_solve(d, rhs, get_parametric_type(d), tullio_threading = tullio_threading)
+
+## Error helpers
+
+@noinline function _throw_bad_decomp_method(method)
+    throw(ArgumentError("""
+Unrecognised matrix factorisation method.
+
+Expected:
+    "pinv", "cholesky", or "svd"
+
+Got:
+    method = $(repr(method))
+"""))
+end
 
 end
