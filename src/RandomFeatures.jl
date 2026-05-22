@@ -20,5 +20,6 @@ include("Utilities.jl") # some additional tools
 include("Samplers.jl") # samples a distribution
 include("Features.jl") # builds a feature from the samples
 include("Methods.jl") # fits to data
+include("show.jl")   # Base.show / Base.summary for all public types
 
 end # module
