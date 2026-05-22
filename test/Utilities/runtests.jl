@@ -53,7 +53,10 @@ using RandomFeatures.Utilities
     xpinv = Decomposition(x, "pinv")
     @test isposdef(x)
     xchol = Decomposition(x, "cholesky")
-    @test_throws ArgumentError Decomposition(x, "qr")
+    let thrown = @test_throws ArgumentError Decomposition(x, "qr")
+        @test contains(thrown.value.msg, "\"pinv\"")
+        @test contains(thrown.value.msg, "\"qr\"")
+    end
 
     xbad = [1.0 1.0; 1.0 0.0] # not pos def
     xbadchol = Decomposition(xbad, "cholesky")
