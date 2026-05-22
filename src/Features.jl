@@ -1,6 +1,7 @@
 module Features
 
 include("ScalarFunctions.jl")
+include("ErrorMessages.jl")
 import StatsBase: sample
 
 using EnsembleKalmanProcesses.ParameterDistributions,

@@ -42,14 +42,8 @@ function ScalarFeature(
     scalar_fun::SF;
     feature_parameters::Dict{S} = Dict("sigma" => 1),
 ) where {S <: AbstractString, SF <: ScalarFunction}
-    if "xi" ∉ get_name(get_parameter_distribution(feature_sampler))
-        throw(
-            ArgumentError(
-                " Named parameter \"xi\" not found in names of parameter_distribution. " *
-                " \n Please provide the name \"xi\" to the distribution used to sample the features",
-            ),
-        )
-    end
+    "xi" ∈ get_name(get_parameter_distribution(feature_sampler)) ||
+        _throw_missing_xi(get_parameter_distribution(feature_sampler); where = :ScalarFeature)
 
     if "sigma" ∉ keys(feature_parameters)
         @info(" Required feature parameter key \"sigma\" not defined, continuing with default value \"sigma\" = 1 ")

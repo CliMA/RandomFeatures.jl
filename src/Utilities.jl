@@ -147,12 +147,7 @@ function Decomposition(
         return Decomposition{Factor, typeof(mat), Base.return_types(cholesky, (typeof(mat),))[1]}(mat, fmat, inv(fmat))
 
     else
-        throw(
-            ArgumentError(
-                "Only factorization methods \"pinv\", \"cholesky\" and \"svd\" implemented. got " * string(method),
-            ),
-        )
-
+        _throw_bad_decomp_method(method)
     end
 end
 """
@@ -235,5 +230,19 @@ end
 
 linear_solve(d::Decomposition, rhs::A; tullio_threading = true) where {A <: AbstractArray} =
     linear_solve(d, rhs, get_parametric_type(d), tullio_threading = tullio_threading)
+
+## Error helpers
+
+@noinline function _throw_bad_decomp_method(method)
+    throw(ArgumentError("""
+Unrecognised matrix factorisation method.
+
+Expected:
+    "pinv", "cholesky", or "svd"
+
+Got:
+    method = $(repr(method))
+"""))
+end
 
 end

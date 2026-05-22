@@ -220,6 +220,15 @@ which file to use by reading the top-level module file (e.g. `src/PackageName.jl
 for its `include(...)` list — then add `include("ErrorMessages.jl")` as the first
 `include` so every subsequent file sees the helpers without any `using`/`import`.
 
+**Submodule scope trap**: When a shared helper lives in `src/ErrorMessages.jl`,
+include it *inside every submodule that uses it*, not just in the parent module.
+A function defined via `include("ErrorMessages.jl")` in `module RandomFeatures`
+is invisible to `module Features` (a nested submodule). The fix: place
+`include("ErrorMessages.jl")` at the top of the submodule's own file (e.g.
+`Features.jl`), before the files that call it. The package will still load cleanly
+with the helper in the wrong scope — only the `@test_throws` tests reveal the
+mistake, making this easy to miss in review.
+
 **Naming convention**
 
 ```
@@ -383,6 +392,23 @@ Three outcomes:
 | `@test_throws <correct_type>` already present | Skip — do not add a duplicate |
 | `@test_throws <wrong_type>` already present | Update the existing line to the new type |
 | No coverage at all | Add a new test |
+
+**Check message content, not just type**: In Julia 1.8+, `@test_throws` returns
+the caught exception, so you can pin key diagnostic text in the same block:
+
+```julia
+let thrown = @test_throws ArgumentError f(bad_input)
+    @test contains(thrown.value.msg, "available names")   # Got section present
+    @test contains(thrown.value.msg, repr(bad_input))     # received value interpolated
+end
+```
+
+Add at least one `contains` check per new error site. Without this, a refactor can
+preserve the exception type while silently dropping the Got section or the
+interpolated value, and no test will catch it. Check for: a phrase from the summary
+line, the Got section label (e.g. `"available names"`, `"missing required keys"`),
+and `repr(bad_value)` when the message uses `repr`. The `let` block is the cleanest
+form — it keeps the type assertion and the content assertions co-located.
 
 For every site that needs a new test, add it in the matching `test/<module>/runtests.jl`:
 

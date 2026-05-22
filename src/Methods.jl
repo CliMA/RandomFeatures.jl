@@ -68,9 +68,8 @@ function RandomFeatureMethod(
     regularization_inverted::Bool = false,
 ) where {S <: AbstractString, USorMorR <: Union{<:Real, AbstractMatrix{<:Real}, UniformScaling}}
 
-    if !all([key ∈ keys(batch_sizes) for key in ["train", "test", "feature"]])
-        throw(ArgumentError("batch_sizes keys must contain all of \"train\", \"test\", and \"feature\""))
-    end
+    all(k -> haskey(batch_sizes, k), ("train", "test", "feature")) ||
+        _throw_bad_batch_sizes(sort(collect(keys(batch_sizes))))
 
     # ToDo store cholesky factors
     if isa(regularization, Real)
@@ -93,7 +92,7 @@ function RandomFeatureMethod(
     # we work with inverted regularization matrix
     if !(regularization_inverted)
         if cond(regularization) > 10^8
-            @warn "The provided regularization is poorly conditioned: κ(reg) = cond(regularization). Imprecision or SingularException during inversion may occur."
+            @warn "Regularization matrix is poorly conditioned (κ = $(cond(regularization)), threshold = 1e8). Inversion may lose precision or throw SingularException."
         end
         λinv = inv(λ)
     else
@@ -616,8 +615,25 @@ end
 
 # TODO
 # function posterior_cov(rfm::RandomFeatureMethod, u_input, v_input)
-# 
+#
 # end
+
+## Error helpers
+
+@noinline function _throw_bad_batch_sizes(got_keys)
+    throw(ArgumentError("""
+batch_sizes dict is missing required keys.
+
+Expected keys:
+    "train", "test", "feature"
+
+Got keys:
+    $got_keys
+
+Suggestion:
+    Provide all three keys, e.g. Dict("train" => 0, "test" => 0, "feature" => 0).
+"""))
+end
 
 
 end # module

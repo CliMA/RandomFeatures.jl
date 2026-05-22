@@ -41,7 +41,10 @@ tol = 1e3 * eps()
         lambdamat_warn = ones(3, 3) # not pos def
         L = [0.5 0; 1.3 0.3]
         lambdamat = L * permutedims(L, (2, 1)) #pos def
-        @test_throws ArgumentError RandomFeatureMethod(sff, regularization = lambda, batch_sizes = batch_sizes_err)
+        let thrown = @test_throws ArgumentError RandomFeatureMethod(sff, regularization = lambda, batch_sizes = batch_sizes_err)
+            @test contains(thrown.value.msg, "missing required keys")
+            @test contains(thrown.value.msg, "NOT_FEATURES")
+        end
 
         rfm_warn = RandomFeatureMethod(sff, regularization = lambda_warn, batch_sizes = batch_sizes)
         @test get_regularization(rfm_warn) ≈ inv(1e12 * eps() * I) # inverted internally
