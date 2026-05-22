@@ -59,13 +59,29 @@ function Base.show(io::IO, ::MIME"text/plain", x::Features.ScalarFeature)
 end
 
 function Base.show(io::IO, x::Features.ScalarFeature)
-    print(io, "ScalarFeature (", x.n_features, " feature",
-          x.n_features == 1 ? "" : "s", ", ", nameof(typeof(x.scalar_function)), ")")
+    print(
+        io,
+        "ScalarFeature (",
+        x.n_features,
+        " feature",
+        x.n_features == 1 ? "" : "s",
+        ", ",
+        nameof(typeof(x.scalar_function)),
+        ")",
+    )
 end
 
 function Base.summary(io::IO, x::Features.ScalarFeature)
-    print(io, "ScalarFeature (", x.n_features, " feature",
-          x.n_features == 1 ? "" : "s", ", ", nameof(typeof(x.scalar_function)), ")")
+    print(
+        io,
+        "ScalarFeature (",
+        x.n_features,
+        " feature",
+        x.n_features == 1 ? "" : "s",
+        ", ",
+        nameof(typeof(x.scalar_function)),
+        ")",
+    )
 end
 
 # ── VectorFeatures ────────────────────────────────────────────────────────────
@@ -87,13 +103,29 @@ function Base.show(io::IO, ::MIME"text/plain", x::Features.VectorFeature)
 end
 
 function Base.show(io::IO, x::Features.VectorFeature)
-    print(io, "VectorFeature (", x.n_features, " features → ", x.output_dim, "D, ",
-          nameof(typeof(x.scalar_function)), ")")
+    print(
+        io,
+        "VectorFeature (",
+        x.n_features,
+        " features → ",
+        x.output_dim,
+        "D, ",
+        nameof(typeof(x.scalar_function)),
+        ")",
+    )
 end
 
 function Base.summary(io::IO, x::Features.VectorFeature)
-    print(io, "VectorFeature (", x.n_features, " features → ", x.output_dim, "D, ",
-          nameof(typeof(x.scalar_function)), ")")
+    print(
+        io,
+        "VectorFeature (",
+        x.n_features,
+        " features → ",
+        x.output_dim,
+        "D, ",
+        nameof(typeof(x.scalar_function)),
+        ")",
+    )
 end
 
 # ── RandomFeatureMethod / Fit ─────────────────────────────────────────────────
@@ -107,20 +139,17 @@ function Base.show(io::IO, ::MIME"text/plain", x::Methods.RandomFeatureMethod)
         println(io, "  feature type  : ", nameof(typeof(x.random_feature)))
         println(io, "  n_features    : ", x.random_feature.n_features)
         println(io, "  regularization: ", nameof(typeof(x.regularization)))
-        println(io, "  batch_sizes   : train=", bs["train"],
-                ", test=", bs["test"], ", feature=", bs["feature"])
+        println(io, "  batch_sizes   : train=", bs["train"], ", test=", bs["test"], ", feature=", bs["feature"])
         println(io, "  threading     : ", x.tullio_threading)
     end
 end
 
 function Base.show(io::IO, x::Methods.RandomFeatureMethod)
-    print(io, "RandomFeatureMethod (", nameof(typeof(x.random_feature)),
-          ", n=", x.random_feature.n_features, ")")
+    print(io, "RandomFeatureMethod (", nameof(typeof(x.random_feature)), ", n=", x.random_feature.n_features, ")")
 end
 
 function Base.summary(io::IO, x::Methods.RandomFeatureMethod)
-    print(io, "RandomFeatureMethod (", nameof(typeof(x.random_feature)),
-          ", n=", x.random_feature.n_features, ")")
+    print(io, "RandomFeatureMethod (", nameof(typeof(x.random_feature)), ", n=", x.random_feature.n_features, ")")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", x::Methods.Fit)
