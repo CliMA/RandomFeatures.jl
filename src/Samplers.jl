@@ -9,9 +9,16 @@ export Sampler, FeatureSampler, get_parameter_distribution, get_rng, sample
 """
 $(TYPEDEF)
 
-Wraps the parameter distributions used to sample random features
+Wraps the parameter distributions and random number generator used to draw random feature parameters.
 
 $(TYPEDFIELDS)
+
+# Constructors
+
+- `FeatureSampler(parameter_distribution, bias_distribution; rng)` — explicit `ParameterDistribution`
+  bias, or `nothing` for no bias term.
+- `FeatureSampler(parameter_distribution, output_dim; uniform_shift_bounds, rng)` — uniform bias over
+  `output_dim` dimensions; bounds default to `[0, 2π]`.
 """
 struct Sampler{RNG <: AbstractRNG}
     "A probability distribution, possibly with constraints"
@@ -23,7 +30,13 @@ end
 """
 $(TYPEDSIGNATURES)
 
-basic constructor for a `Sampler` 
+Construct a `Sampler` from a `parameter_distribution` and an optional `bias_distribution`.
+
+When `bias_distribution` is `nothing`, no bias term is added to the feature inner product.
+When a `ParameterDistribution` is supplied, it is combined with `parameter_distribution`
+into a single joint distribution before wrapping in the `Sampler`.
+
+Pass a `ParameterDistribution` with name `"xi"` for the feature weights.
 """
 function FeatureSampler(
     parameter_distribution::ParameterDistribution,
@@ -38,11 +51,6 @@ function FeatureSampler(
     end
 end
 
-"""
-$(TYPEDSIGNATURES)
-
-one can conveniently specify the bias as a uniform-shift `uniform_shift_bounds` with `output_dim` dimensions
-"""
 function FeatureSampler(
     parameter_distribution::ParameterDistribution,
     output_dim::Int;

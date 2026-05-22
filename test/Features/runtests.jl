@@ -84,11 +84,11 @@ seed = 2202
         sigma_fixed_err = Dict("not sigma" => 10.0)
 
         # Error checks
-        @test_throws ArgumentError ScalarFeature(
-            n_features,
-            feature_sampler_err, # causes error
-            relu,
-        )
+        let thrown = @test_throws ArgumentError ScalarFeature(n_features, feature_sampler_err, relu)
+            @test contains(thrown.value.msg, "ScalarFeature")
+            @test contains(thrown.value.msg, "\"xi\"")
+            @test contains(thrown.value.msg, "available names")
+        end
         @test_logs (
             :info,
             " Required feature parameter key \"sigma\" not defined, continuing with default value \"sigma\" = 1 ",
@@ -208,12 +208,11 @@ seed = 2202
         sigma_fixed_err = Dict("not sigma" => 10.0)
 
         # Error checks
-        @test_throws ArgumentError VectorFeature(
-            n_features,
-            output_dim,
-            feature_sampler_err, # causes error
-            relu,
-        )
+        let thrown = @test_throws ArgumentError VectorFeature(n_features, output_dim, feature_sampler_err, relu)
+            @test contains(thrown.value.msg, "VectorFeature")
+            @test contains(thrown.value.msg, "\"xi\"")
+            @test contains(thrown.value.msg, "available names")
+        end
         @test_logs (
             :info,
             " Required feature parameter key \"sigma\" not defined, continuing with default value \"sigma\" = 1 ",

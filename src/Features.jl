@@ -1,11 +1,15 @@
 module Features
 
 include("ScalarFunctions.jl")
+include("ErrorMessages.jl")
 import StatsBase: sample
 
 using EnsembleKalmanProcesses.ParameterDistributions,
     DocStringExtensions, RandomFeatures.Samplers, Tullio, LoopVectorization
 
+"""
+Abstract supertype for all random feature approximation models mapping inputs to random feature embeddings.
+"""
 abstract type RandomFeature end
 include("ScalarFeatures.jl")
 include("VectorFeatures.jl")

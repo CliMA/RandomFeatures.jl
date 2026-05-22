@@ -5,23 +5,24 @@ CurrentModule = RandomFeatures.Methods
 ```
 
 ```@docs
-    RandomFeatureMethod
-    Fit
-    get_random_feature
-    get_batch_sizes
-    get_batch_size
-    get_regularization
-    sample(rfm::RandomFeatureMethod)
-    get_feature_factors
-    get_coeffs
-    fit
-    predict
-    predict!
-    predictive_mean
-    predictive_mean!
-    predictive_cov
-    predictive_cov!
-    predict_prior
-    predict_prior_mean
-    predict_prior_cov
+RandomFeatureMethod
+Fit
+get_random_feature
+get_batch_sizes
+get_batch_size
+get_regularization
+get_tullio_threading
+sample(rfm::RandomFeatureMethod)
+get_feature_factors
+get_coeffs
+fit
+predict
+predict!
+predictive_mean
+predictive_mean!
+predictive_cov
+predictive_cov!
+predict_prior
+predict_prior_mean
+predict_prior_cov
 ```
